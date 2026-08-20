@@ -1,7 +1,7 @@
 export const firebaseConfig = {
   apiKey: "AIzaSyC6zXh7-T9W4SFyKJv1MmZmCK6dgkaFpQg",
   authDomain: "tripplanner-531c6.firebaseapp.com",
-  databaseURL: "https://tripplanner-531c6-default-rtdb.asia-northeast3.firebasedatabase.app",
+  databaseURL: "https://tripplanner-531c6-default-rtdb.firebaseio.com",
   projectId: "tripplanner-531c6",
   storageBucket: "tripplanner-531c6.firebasestorage.app",
   messagingSenderId: "307647964357",
