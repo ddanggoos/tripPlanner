@@ -12,10 +12,23 @@ import {
   formatDateKo,
   placesForDate,
   reindexPlaces,
+  setSyncHooks,
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
 import { initMap, drawRoute, destroyMap, searchPlaces } from "./map.js";
 import { renderBingo, bindBingo, completedLines } from "./bingo.js";
+import {
+  initSync,
+  isFirebaseConfigured,
+  isSyncReady,
+  joinUrl,
+  makeShareId,
+  subscribeTrip,
+  schedulePush,
+  pushTrip,
+  fetchSharedTrip,
+  removeSharedTrip,
+} from "./sync.js";
 
 const app = document.getElementById("app");
 const fileInput = document.getElementById("import-file");
@@ -29,6 +42,7 @@ function parseRoute() {
   const path = raw.split("?")[0];
   const parts = path.split("/").filter(Boolean);
   if (parts[0] === "new") return { name: "new" };
+  if (parts[0] === "join" && parts[1]) return { name: "join", shareId: decodeURIComponent(parts[1]) };
   if (parts[0] === "trip" && parts[1]) {
     const tab = parts[2] || "info";
     return { name: "trip", id: parts[1], tab };
@@ -134,6 +148,123 @@ function openSheet(title, bodyHtml) {
   return sheet;
 }
 
+function shareStatusText(trip) {
+  if (!isFirebaseConfigured()) return "아직 클라우드 연결이 없습니다. 링크 보내기를 누르면 설정 방법이 나와요.";
+  if (!isSyncReady()) return "클라우드에 연결하지 못했습니다.";
+  if (trip.shareId) return "공유 중 · 링크를 가진 사람과 실시간으로 맞춰집니다.";
+  return "아직 공유하지 않았습니다.";
+}
+
+function firebaseHelpHtml() {
+  return `
+    <div class="help-copy">
+      <p>두 사람이 같이 보려면 Firebase를 한 번만 연결하면 됩니다. 무료입니다.</p>
+      <ol>
+        <li>https://console.firebase.google.com 에서 프로젝트 만들기</li>
+        <li>Build → Realtime Database → 만들기 (서울 asia-northeast3 권장)</li>
+        <li>규칙은 저장소의 database.rules.json 내용으로 붙여 넣기</li>
+        <li>프로젝트 설정 → 앱 추가(웹) 후 나온 설정을 js/firebase-config.js 에 넣기</li>
+        <li>Authentication → Settings → Authorized domains 에 ddanggoos.github.io 추가</li>
+        <li>GitHub에 커밋하면 Pages에 올라가고, 그다음부터 링크 공유가 됩니다</li>
+      </ol>
+    </div>
+  `;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-9999px";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  }
+}
+
+async function shareTrip(trip) {
+  if (!isFirebaseConfigured() || !isSyncReady()) {
+    openSheet("실시간 공유 설정", firebaseHelpHtml());
+    return;
+  }
+  if (!trip.shareId) trip.shareId = makeShareId();
+  const shared = upsertTrip(trip);
+  subscribeTrip(shared.shareId);
+  await pushTrip(shared);
+  const url = joinUrl(shared.shareId);
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: shared.name, text: "여행 계획표", url });
+      toast("링크를 보냈습니다.");
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  openSheet("공유 링크", `
+    <div class="stack-form">
+      <p class="hint">이 링크를 여자친구에게 보내 주세요. 같은 페이지에서 바로 반영됩니다.</p>
+      <input type="text" readonly value="${escapeHtml(url)}">
+      <button type="button" class="primary-btn" data-copy-share>복사</button>
+    </div>
+  `);
+  document.querySelector("[data-copy-share]")?.addEventListener("click", async () => {
+    const ok = await copyText(url);
+    toast(ok ? "링크를 복사했습니다." : "복사에 실패했습니다.");
+  });
+}
+
+function renderJoin(shareId) {
+  destroyMap();
+  app.innerHTML = `
+    <div class="screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/">목록</a>
+          <div class="topbar-title"><h1>공유 여행</h1></div>
+          <span></span>
+        </div>
+      </header>
+      <main class="content">
+        <div class="empty">공유된 여행을 불러오는 중...</div>
+      </main>
+    </div>
+  `;
+  (async () => {
+    if (!isSyncReady()) {
+      toast("클라우드 연결이 없습니다. Firebase 설정을 먼저 해 주세요.");
+      go("/");
+      return;
+    }
+    try {
+      const remote = await fetchSharedTrip(shareId);
+      if (!remote) {
+        toast("공유 여행을 찾지 못했습니다.");
+        go("/");
+        return;
+      }
+      const trip = upsertTrip(remote, { fromRemote: true });
+      subscribeTrip(trip.shareId || shareId);
+      go(`/trip/${trip.id}`);
+    } catch (error) {
+      toast(error.message || "불러오기에 실패했습니다.");
+      go("/");
+    }
+  })();
+}
+  return `
+    <button type="button" class="text-btn" data-action="export">내보내기</button>
+    <button type="button" class="text-btn" data-action="import">가져오기</button>
+  `;
+}
+
 function headerActions() {
   return `
     <button type="button" class="text-btn" data-action="export">내보내기</button>
@@ -150,7 +281,7 @@ function renderHome() {
           <a class="trip-card-main" href="#/trip/${encodeURIComponent(trip.id)}">
             <p class="eyebrow">${escapeHtml(trip.destination || "목적지 미정")}</p>
             <h2>${escapeHtml(trip.name)}</h2>
-            <p class="meta">${tripRangeLabel(trip)} · 장소 ${trip.places.length} · 항공 ${trip.flights.length}</p>
+            <p class="meta">${tripRangeLabel(trip)} · 장소 ${trip.places.length} · 항공 ${trip.flights.length}${trip.shareId ? " · 공유 중" : ""}</p>
           </a>
           <button type="button" class="ghost-btn danger" data-action="delete-trip" data-id="${trip.id}">삭제</button>
         </article>
@@ -221,10 +352,10 @@ function renderInfo(trip) {
         <div class="topbar-inner">
           <a class="back" href="#/">목록</a>
           <div class="topbar-title">
-            <p class="eyebrow">${escapeHtml(trip.destination || "목적지 미정")}</p>
+            <p class="eyebrow">${escapeHtml(trip.destination || "목적지 미정")}${trip.shareId && isSyncReady() ? " · 실시간" : ""}</p>
             <h1>${escapeHtml(trip.name)}</h1>
           </div>
-          <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">수정</button>
+          <button type="button" class="text-btn" data-action="share-trip" data-id="${trip.id}">공유</button>
         </div>
       </header>
       <main class="content has-tabbar">
@@ -240,6 +371,16 @@ function renderInfo(trip) {
             <button type="submit" class="primary-btn">날짜 저장</button>
           </form>
           ${days.length ? `<p class="hint">${days.length}일 일정 · ${formatDateKo(trip.startDate)}부터</p>` : ""}
+        </section>
+
+        <section class="group">
+          <div class="group-head">
+            <h2>함께 보기</h2>
+            <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">이름 수정</button>
+          </div>
+          <p class="hint">링크를 보내면 두 폰에서 같은 계획이 실시간으로 바뀝니다.</p>
+          <button type="button" class="primary-btn" data-action="share-trip" data-id="${trip.id}">링크 보내기</button>
+          <p class="meta share-status">${shareStatusText(trip)}</p>
         </section>
 
         <section class="group">
@@ -631,6 +772,10 @@ function render() {
     renderNew();
     return;
   }
+  if (route.name === "join") {
+    renderJoin(route.shareId);
+    return;
+  }
   if (route.name === "trip") {
     const trip = getTrip(route.id);
     if (!trip) {
@@ -666,6 +811,10 @@ function onClick(event) {
   }
   if (action === "new-trip") {
     go("/new");
+    return;
+  }
+  if (action === "share-trip" && trip) {
+    shareTrip(trip);
     return;
   }
   if (action === "delete-trip" && trip) {
@@ -896,7 +1045,22 @@ syncThemeColor();
 syncViewport();
 
 initStorage()
-  .then(() => {
+  .then(async () => {
+    setSyncHooks({
+      onSave: (trip) => schedulePush(trip),
+      onDelete: (trip) => {
+        if (trip?.shareId) removeSharedTrip(trip.shareId);
+      },
+    });
+    await initSync({
+      onRemoteTrip: (remote) => {
+        upsertTrip(remote, { fromRemote: true });
+        if (!document.querySelector(".sheet.is-open")) render();
+      },
+    });
+    getState().trips.forEach((trip) => {
+      if (trip.shareId) subscribeTrip(trip.shareId);
+    });
     render();
   })
   .catch((error) => {

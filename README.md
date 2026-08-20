@@ -19,6 +19,20 @@
 - 화면에서 고친 내용은 이 브라우저의 localStorage에 저장됩니다.
 - 다른 기기와 맞추려면 화면의 **내보내기**로 `trips.json`을 받은 뒤 `data/trips.json`에 넣고 커밋하거나, **가져오기**로 다시 읽으면 됩니다.
 
+## 여자친구와 실시간 공유
+
+둘 다 같은 링크를 열면 일정·빙고가 바로 맞춰집니다. Firebase Realtime Database(무료 스파크 플랜)를 씁니다.
+
+1. [Firebase 콘솔](https://console.firebase.google.com)에서 프로젝트 만들기
+2. **Build → Realtime Database** 만들기. 지역은 `asia-northeast3`(서울) 권장
+3. 규칙에 [`database.rules.json`](database.rules.json) 내용을 붙여 넣기
+4. 프로젝트 설정 → 웹 앱 추가 후 나온 `apiKey`, `databaseURL` 등을 [`js/firebase-config.js`](js/firebase-config.js)에 넣기
+5. Authentication → Settings → Authorized domains에 `ddanggoos.github.io` 추가
+6. 커밋하면 Pages에 배포됨
+7. 여행 상세에서 **링크 보내기** → 아이폰 공유 시트로 카톡/메시지 전송
+
+링크를 아는 사람은 그 여행을 읽고 고칠 수 있으니, 공개 게시하지 마세요.
+
 ## 로컬에서 보기
 
 모듈 스크립트라 파일을 더블클릭하면 막힐 수 있습니다. 저장소 폴더에서:
