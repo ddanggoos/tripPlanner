@@ -14,7 +14,7 @@ import {
   reindexPlaces,
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
-import { initMap, drawRoute, destroyMap, searchPlaces } from "./map.js";
+import { initMap, drawRoute, destroyMap, searchPlaces, flyToPlace, googleMapsUrl } from "./map.js";
 import { renderBingo, bindBingo, completedLines } from "./bingo.js";
 
 const app = document.getElementById("app");
@@ -336,6 +336,31 @@ function renderPlan(trip, date) {
   `;
 }
 
+function routeStrip(places) {
+  const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
+  if (!pinned.length) {
+    return `<p class="map-hint">지도를 누르거나 구글맵 링크를 붙여 장소를 추가하세요.</p>`;
+  }
+  return `
+    <div class="route-strip" role="list">
+      ${pinned.map((place, index) => `
+        <button
+          type="button"
+          class="route-stop"
+          data-action="fly-place"
+          data-lat="${place.lat}"
+          data-lng="${place.lng}"
+          aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
+        >
+          <span class="route-num">${index + 1}</span>
+          <span class="route-name">${escapeHtml(place.title || "장소")}</span>
+        </button>
+        ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderMapTab(trip, date) {
   const selected = selectedDateFor(trip, date);
   selectedDates[trip.id] = selected;
@@ -351,13 +376,13 @@ function renderMapTab(trip, date) {
         <div class="map-tools">
           ${dayChips(trip, selected, `#/trip/${trip.id}/map`)}
           <form class="search-form" data-form="search">
-            <input type="search" name="q" placeholder="장소 검색" enterkeyhint="search" autocomplete="off">
+            <input type="search" name="q" placeholder="장소 이름 또는 구글맵 링크" enterkeyhint="search" autocomplete="off">
           </form>
           <div class="search-results" hidden></div>
         </div>
       </header>
       <div id="map" class="map-canvas" role="application" aria-label="일정 지도"></div>
-      <p class="map-hint">지도를 눌러 장소를 추가합니다. 순서는 일정 탭에서 바꿀 수 있어요.</p>
+      ${routeStrip(places)}
       ${tabbar(trip, "map")}
     </div>
   `;
@@ -410,8 +435,8 @@ function renderMapTab(trip, date) {
             });
           });
         });
-      } catch {
-        toast("검색에 실패했습니다.");
+      } catch (error) {
+        toast(error.message || "검색에 실패했습니다.");
       }
     }, 350);
   });
@@ -568,7 +593,10 @@ function placeForm(place = {}) {
       <label>메모
         <textarea name="note" rows="2">${escapeHtml(place.note || "")}</textarea>
       </label>
-      ${Number.isFinite(place.lat) ? `<p class="hint">위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>` : `<p class="hint">위치는 지도 탭에서 찍을 수 있어요.</p>`}
+      ${Number.isFinite(place.lat) ? `
+        <p class="hint">위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>
+        <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener">구글 지도에서 보기</a>
+      ` : `<p class="hint">위치는 지도 탭에서 찍거나 구글맵 링크를 붙여 넣을 수 있어요.</p>`}
       <button type="submit" class="primary-btn">저장</button>
     </form>
   `;
@@ -652,6 +680,10 @@ function onClick(event) {
   const btn = event.target.closest("[data-action]");
   if (!btn) return;
   const action = btn.dataset.action;
+  if (action === "fly-place") {
+    flyToPlace({ lat: Number(btn.dataset.lat), lng: Number(btn.dataset.lng) });
+    return;
+  }
   const id = btn.dataset.id;
   const trip = id ? getTrip(id) : null;
 
@@ -871,6 +903,12 @@ app.addEventListener("submit", (event) => {
     upsertTrip(trip);
     toast("날짜를 저장했습니다.");
     render();
+    return;
+  }
+  if (form.dataset.form === "search") {
+    event.preventDefault();
+    const input = form.querySelector("input");
+    input?.dispatchEvent(new Event("input"));
   }
 });
 
