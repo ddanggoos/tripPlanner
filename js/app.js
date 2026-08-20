@@ -1,0 +1,879 @@
+import {
+  initStorage,
+  getState,
+  getTrip,
+  upsertTrip,
+  deleteTrip,
+  exportJson,
+  importJson,
+  resetToSeed,
+  uid,
+  dateRange,
+  formatDateKo,
+  placesForDate,
+  reindexPlaces,
+  DEFAULT_BINGO_ITEMS,
+} from "./storage.js";
+import { initMap, drawRoute, destroyMap, searchPlaces } from "./map.js";
+import { renderBingo, bindBingo, completedLines } from "./bingo.js";
+
+const app = document.getElementById("app");
+const fileInput = document.getElementById("import-file");
+
+let selectedDates = {};
+let searchTimer = null;
+let toastTimer = null;
+
+function parseRoute() {
+  const raw = (location.hash || "#/").replace(/^#/, "") || "/";
+  const path = raw.split("?")[0];
+  const parts = path.split("/").filter(Boolean);
+  if (parts[0] === "new") return { name: "new" };
+  if (parts[0] === "trip" && parts[1]) {
+    const tab = parts[2] || "info";
+    return { name: "trip", id: parts[1], tab };
+  }
+  return { name: "home" };
+}
+
+function go(path) {
+  location.hash = path;
+}
+
+function phoneRoot() {
+  return document.querySelector(".phone") || document.body;
+}
+
+function toast(message) {
+  let el = document.querySelector(".toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "toast";
+    phoneRoot().appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.add("is-show");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => el.classList.remove("is-show"), 1800);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function tripRangeLabel(trip) {
+  if (trip.startDate && trip.endDate) {
+    return `${formatDateKo(trip.startDate)} – ${formatDateKo(trip.endDate)}`;
+  }
+  return "날짜 미정";
+}
+
+function daysOf(trip) {
+  return dateRange(trip.startDate, trip.endDate);
+}
+
+function selectedDateFor(trip, fallback) {
+  const days = daysOf(trip);
+  const current = selectedDates[trip.id];
+  if (current && days.includes(current)) return current;
+  if (fallback && days.includes(fallback)) return fallback;
+  return days[0] || "";
+}
+
+function closeSheet() {
+  document.querySelector(".sheet")?.remove();
+  document.querySelector(".sheet-backdrop")?.remove();
+}
+
+function openSheet(title, bodyHtml) {
+  closeSheet();
+  const backdrop = document.createElement("div");
+  backdrop.className = "sheet-backdrop";
+  backdrop.addEventListener("click", closeSheet);
+  const sheet = document.createElement("div");
+  sheet.className = "sheet";
+  sheet.innerHTML = `
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <h2>${escapeHtml(title)}</h2>
+      <button type="button" class="icon-btn" data-close-sheet aria-label="닫기">닫기</button>
+    </div>
+    <div class="sheet-body">${bodyHtml}</div>
+  `;
+  sheet.querySelector("[data-close-sheet]").addEventListener("click", closeSheet);
+  phoneRoot().append(backdrop, sheet);
+  requestAnimationFrame(() => {
+    backdrop.classList.add("is-open");
+    sheet.classList.add("is-open");
+  });
+  const first = sheet.querySelector("input, textarea, select");
+  if (first) first.focus();
+  return sheet;
+}
+
+function headerActions() {
+  return `
+    <button type="button" class="text-btn" data-action="export">내보내기</button>
+    <button type="button" class="text-btn" data-action="import">가져오기</button>
+  `;
+}
+
+function renderHome() {
+  destroyMap();
+  const { trips } = getState();
+  const cards = trips.length
+    ? trips.map((trip) => `
+        <article class="trip-card">
+          <a class="trip-card-main" href="#/trip/${encodeURIComponent(trip.id)}">
+            <p class="eyebrow">${escapeHtml(trip.destination || "목적지 미정")}</p>
+            <h2>${escapeHtml(trip.name)}</h2>
+            <p class="meta">${tripRangeLabel(trip)} · 장소 ${trip.places.length} · 항공 ${trip.flights.length}</p>
+          </a>
+          <button type="button" class="ghost-btn danger" data-action="delete-trip" data-id="${trip.id}">삭제</button>
+        </article>
+      `).join("")
+    : `<div class="empty">아직 여행이 없어요.<br>아래 버튼으로 만들어 보세요.</div>`;
+
+  app.innerHTML = `
+    <div class="screen home-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <div>
+            <p class="eyebrow">Trip Planner</p>
+            <h1>여행 계획표</h1>
+          </div>
+          <div class="topbar-actions">${headerActions()}</div>
+        </div>
+      </header>
+      <main class="content">
+        ${cards}
+        <p class="home-footer"><button type="button" class="text-btn" data-action="reset-all">샘플로 되돌리기</button></p>
+      </main>
+      <div class="fab-space"></div>
+      <button type="button" class="fab" data-action="new-trip">새 여행</button>
+    </div>
+  `;
+}
+
+function tabbar(trip, tab) {
+  const items = [
+    ["info", "정보", "#/trip/" + trip.id],
+    ["plan", "일정", `#/trip/${trip.id}/plan`],
+    ["map", "지도", `#/trip/${trip.id}/map`],
+    ["bingo", "빙고", `#/trip/${trip.id}/bingo`],
+  ];
+  return `
+    <nav class="tabbar" aria-label="여행 메뉴">
+      ${items.map(([id, label, href]) => `
+        <a class="tab-item ${tab === id ? "is-active" : ""}" href="${href}">
+          <span class="tab-icon" data-tab="${id}"></span>
+          ${label}
+        </a>
+      `).join("")}
+    </nav>
+  `;
+}
+
+function dayChips(trip, selected, hrefBase) {
+  const days = daysOf(trip);
+  if (!days.length) {
+    return `<div class="empty compact">먼저 정보 탭에서 여행 날짜를 저장하세요.</div>`;
+  }
+  return `
+    <div class="chips" role="tablist">
+      ${days.map((date) => `
+        <a class="chip ${date === selected ? "is-active" : ""}" href="${hrefBase}?d=${date}">
+          ${formatDateKo(date)}
+        </a>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderInfo(trip) {
+  const days = daysOf(trip);
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/">목록</a>
+          <div class="topbar-title">
+            <p class="eyebrow">${escapeHtml(trip.destination || "목적지 미정")}</p>
+            <h1>${escapeHtml(trip.name)}</h1>
+          </div>
+          <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">수정</button>
+        </div>
+      </header>
+      <main class="content has-tabbar">
+        <section class="group">
+          <h2>여행 기간</h2>
+          <form class="stack-form" data-form="dates" data-id="${trip.id}">
+            <label>시작일
+              <input type="date" name="startDate" value="${trip.startDate || ""}" required>
+            </label>
+            <label>종료일
+              <input type="date" name="endDate" value="${trip.endDate || ""}" required>
+            </label>
+            <button type="submit" class="primary-btn">날짜 저장</button>
+          </form>
+          ${days.length ? `<p class="hint">${days.length}일 일정 · ${formatDateKo(trip.startDate)}부터</p>` : ""}
+        </section>
+
+        <section class="group">
+          <div class="group-head">
+            <h2>항공권</h2>
+            <button type="button" class="text-btn" data-action="add-flight" data-id="${trip.id}">추가</button>
+          </div>
+          ${trip.flights.length ? trip.flights.map((flight) => `
+            <article class="ticket-card">
+              <div class="ticket-row">
+                <strong>${escapeHtml(flight.from || "출발")}</strong>
+                <span class="ticket-arrow">→</span>
+                <strong>${escapeHtml(flight.to || "도착")}</strong>
+              </div>
+              <p>${escapeHtml(flight.airline || "")} ${escapeHtml(flight.flightNo || "")}</p>
+              <p class="meta">${escapeHtml(flight.departAt || "")} → ${escapeHtml(flight.arriveAt || "")}</p>
+              ${flight.pnr ? `<p class="meta">예약 ${escapeHtml(flight.pnr)}</p>` : ""}
+              ${flight.note ? `<p class="note">${escapeHtml(flight.note)}</p>` : ""}
+              <div class="row-actions">
+                <button type="button" class="ghost-btn" data-action="edit-flight" data-id="${trip.id}" data-item="${flight.id}">수정</button>
+                <button type="button" class="ghost-btn danger" data-action="delete-flight" data-id="${trip.id}" data-item="${flight.id}">삭제</button>
+              </div>
+            </article>
+          `).join("") : `<div class="empty compact">저장한 항공권이 없습니다.</div>`}
+        </section>
+
+        <section class="group">
+          <div class="group-head">
+            <h2>호텔</h2>
+            <button type="button" class="text-btn" data-action="add-hotel" data-id="${trip.id}">추가</button>
+          </div>
+          ${trip.hotels.length ? trip.hotels.map((hotel) => `
+            <article class="hotel-card">
+              <h3>${escapeHtml(hotel.name || "호텔")}</h3>
+              <p class="meta">${escapeHtml(hotel.checkIn || "")} ~ ${escapeHtml(hotel.checkOut || "")}</p>
+              ${hotel.address ? `<p>${escapeHtml(hotel.address)}</p>` : ""}
+              ${hotel.pnr ? `<p class="meta">예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
+              ${hotel.note ? `<p class="note">${escapeHtml(hotel.note)}</p>` : ""}
+              <div class="row-actions">
+                <button type="button" class="ghost-btn" data-action="edit-hotel" data-id="${trip.id}" data-item="${hotel.id}">수정</button>
+                <button type="button" class="ghost-btn danger" data-action="delete-hotel" data-id="${trip.id}" data-item="${hotel.id}">삭제</button>
+              </div>
+            </article>
+          `).join("") : `<div class="empty compact">저장한 호텔이 없습니다.</div>`}
+        </section>
+      </main>
+      ${tabbar(trip, "info")}
+    </div>
+  `;
+}
+
+function placeCard(trip, place, index, total) {
+  const hasGeo = Number.isFinite(place.lat) && Number.isFinite(place.lng);
+  return `
+    <article class="place-card">
+      <div class="place-num">${index + 1}</div>
+      <div class="place-body">
+        <button type="button" class="place-edit" data-action="edit-place" data-id="${trip.id}" data-item="${place.id}">
+          <h3>${escapeHtml(place.title || "장소")}</h3>
+          <p class="meta">${place.time ? escapeHtml(place.time) : "시간 미정"} ${hasGeo ? "· 지도 표시" : "· 위치 없음"}</p>
+        </button>
+        ${place.note ? `<p class="note">${escapeHtml(place.note)}</p>` : ""}
+      </div>
+      <div class="place-actions">
+        <button type="button" class="icon-btn" data-action="move-place" data-id="${trip.id}" data-item="${place.id}" data-dir="-1" ${index === 0 ? "disabled" : ""} aria-label="위로">↑</button>
+        <button type="button" class="icon-btn" data-action="move-place" data-id="${trip.id}" data-item="${place.id}" data-dir="1" ${index === total - 1 ? "disabled" : ""} aria-label="아래로">↓</button>
+        <button type="button" class="icon-btn danger" data-action="delete-place" data-id="${trip.id}" data-item="${place.id}" aria-label="삭제">삭제</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderPlan(trip, date) {
+  const selected = selectedDateFor(trip, date);
+  selectedDates[trip.id] = selected;
+  const places = selected ? placesForDate(trip, selected) : [];
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/">목록</a>
+          <div class="topbar-title"><h1>일정</h1></div>
+          <button type="button" class="text-btn" data-action="add-place" data-id="${trip.id}" ${selected ? "" : "disabled"}>추가</button>
+        </div>
+      </header>
+      <main class="content has-tabbar">
+        ${dayChips(trip, selected, `#/trip/${trip.id}/plan`)}
+        ${selected ? (places.length
+          ? places.map((place, index) => placeCard(trip, place, index, places.length)).join("")
+          : `<div class="empty compact">이 날 장소가 없습니다. 추가하거나 지도에서 찍어 보세요.</div>`) : ""}
+      </main>
+      ${tabbar(trip, "plan")}
+    </div>
+  `;
+}
+
+function renderMapTab(trip, date) {
+  const selected = selectedDateFor(trip, date);
+  selectedDates[trip.id] = selected;
+  const places = selected ? placesForDate(trip, selected) : [];
+  app.innerHTML = `
+    <div class="screen map-screen">
+      <header class="topbar overlay">
+        <div class="topbar-inner">
+          <a class="back" href="#/">목록</a>
+          <div class="topbar-title"><h1>지도</h1></div>
+          <span></span>
+        </div>
+        <div class="map-tools">
+          ${dayChips(trip, selected, `#/trip/${trip.id}/map`)}
+          <form class="search-form" data-form="search">
+            <input type="search" name="q" placeholder="장소 검색" enterkeyhint="search" autocomplete="off">
+          </form>
+          <div class="search-results" hidden></div>
+        </div>
+      </header>
+      <div id="map" class="map-canvas" role="application" aria-label="일정 지도"></div>
+      <p class="map-hint">지도를 눌러 장소를 추가합니다. 순서는 일정 탭에서 바꿀 수 있어요.</p>
+      ${tabbar(trip, "map")}
+    </div>
+  `;
+  const mapEl = document.getElementById("map");
+  if (selected) {
+    initMap(mapEl, {
+      onClick: (latlng) => openPlaceSheet(trip, {
+        date: selected,
+        lat: latlng.lat,
+        lng: latlng.lng,
+      }),
+    });
+    drawRoute(places);
+  } else {
+    destroyMap();
+    mapEl.classList.add("is-empty");
+    mapEl.innerHTML = `<div class="empty">날짜를 먼저 저장하세요.</div>`;
+  }
+
+  const form = app.querySelector("[data-form='search']");
+  const resultsEl = app.querySelector(".search-results");
+  form?.querySelector("input")?.addEventListener("input", (event) => {
+    window.clearTimeout(searchTimer);
+    const q = event.target.value;
+    searchTimer = window.setTimeout(async () => {
+      if (!q.trim()) {
+        resultsEl.hidden = true;
+        resultsEl.innerHTML = "";
+        return;
+      }
+      try {
+        const results = await searchPlaces(q);
+        resultsEl.hidden = !results.length;
+        resultsEl.innerHTML = results.map((item, index) => `
+          <button type="button" class="search-item" data-search-index="${index}">
+            <strong>${escapeHtml(item.title)}</strong>
+            <span>${escapeHtml(item.label)}</span>
+          </button>
+        `).join("");
+        resultsEl.querySelectorAll("[data-search-index]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const item = results[Number(btn.dataset.searchIndex)];
+            resultsEl.hidden = true;
+            form.querySelector("input").value = "";
+            openPlaceSheet(trip, {
+              date: selected,
+              title: item.title,
+              lat: item.lat,
+              lng: item.lng,
+            });
+          });
+        });
+      } catch {
+        toast("검색에 실패했습니다.");
+      }
+    }, 350);
+  });
+}
+
+function renderBingoTab(trip) {
+  destroyMap();
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/">목록</a>
+          <div class="topbar-title"><h1>먹거리 빙고</h1></div>
+          <button type="button" class="text-btn" data-action="reset-bingo" data-id="${trip.id}">초기화</button>
+        </div>
+      </header>
+      <main class="content has-tabbar bingo-content">
+        ${renderBingo(trip)}
+      </main>
+      ${tabbar(trip, "bingo")}
+    </div>
+  `;
+  bindBingo(app, {
+    onToggle: (index) => {
+      const checked = new Set(trip.bingo.checked);
+      if (checked.has(index)) checked.delete(index);
+      else checked.add(index);
+      const prevLines = completedLines(trip.bingo.checked || []).length;
+      trip.bingo.checked = [...checked].sort((a, b) => a - b);
+      upsertTrip(trip);
+      const lines = completedLines(trip.bingo.checked).length;
+      render();
+      if (lines > prevLines) toast(`빙고! ${lines}줄 완성`);
+    },
+    onEditItem: (index) => {
+      const next = window.prompt("빙고 칸 이름", trip.bingo.items[index] || "");
+      if (next == null) return;
+      const label = next.trim();
+      if (!label) return;
+      trip.bingo.items[index] = label;
+      upsertTrip(trip);
+      render();
+    },
+  });
+}
+
+function renderNew() {
+  destroyMap();
+  app.innerHTML = `
+    <div class="screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/">취소</a>
+          <div class="topbar-title"><h1>새 여행</h1></div>
+          <span></span>
+        </div>
+      </header>
+      <main class="content">
+        <form class="stack-form" data-form="new-trip">
+          <label>여행 이름
+            <input type="text" name="name" placeholder="예: 오사카 3박 4일" required maxlength="40">
+          </label>
+          <label>목적지
+            <input type="text" name="destination" placeholder="도시 또는 국가" maxlength="40">
+          </label>
+          <label>시작일
+            <input type="date" name="startDate">
+          </label>
+          <label>종료일
+            <input type="date" name="endDate">
+          </label>
+          <button type="submit" class="primary-btn">만들기</button>
+        </form>
+      </main>
+    </div>
+  `;
+}
+
+function flightForm(flight = {}) {
+  return `
+    <form class="stack-form" data-form="flight">
+      <input type="hidden" name="id" value="${flight.id || ""}">
+      <label>항공사
+        <input type="text" name="airline" value="${escapeHtml(flight.airline || "")}" placeholder="대한항공">
+      </label>
+      <label>편명
+        <input type="text" name="flightNo" value="${escapeHtml(flight.flightNo || "")}" placeholder="KE123">
+      </label>
+      <div class="two-col">
+        <label>출발
+          <input type="text" name="from" value="${escapeHtml(flight.from || "")}" placeholder="ICN">
+        </label>
+        <label>도착
+          <input type="text" name="to" value="${escapeHtml(flight.to || "")}" placeholder="KIX">
+        </label>
+      </div>
+      <label>출발 시각
+        <input type="datetime-local" name="departAt" value="${escapeHtml(flight.departAt || "")}">
+      </label>
+      <label>도착 시각
+        <input type="datetime-local" name="arriveAt" value="${escapeHtml(flight.arriveAt || "")}">
+      </label>
+      <label>예약번호
+        <input type="text" name="pnr" value="${escapeHtml(flight.pnr || "")}" placeholder="ABC123">
+      </label>
+      <label>메모
+        <textarea name="note" rows="2" placeholder="터미널, 좌석 등">${escapeHtml(flight.note || "")}</textarea>
+      </label>
+      <button type="submit" class="primary-btn">저장</button>
+    </form>
+  `;
+}
+
+function hotelForm(hotel = {}) {
+  return `
+    <form class="stack-form" data-form="hotel">
+      <input type="hidden" name="id" value="${hotel.id || ""}">
+      <label>호텔 이름
+        <input type="text" name="name" value="${escapeHtml(hotel.name || "")}" required placeholder="호텔 이름">
+      </label>
+      <label>체크인
+        <input type="date" name="checkIn" value="${escapeHtml(hotel.checkIn || "")}">
+      </label>
+      <label>체크아웃
+        <input type="date" name="checkOut" value="${escapeHtml(hotel.checkOut || "")}">
+      </label>
+      <label>주소
+        <input type="text" name="address" value="${escapeHtml(hotel.address || "")}">
+      </label>
+      <label>예약번호
+        <input type="text" name="pnr" value="${escapeHtml(hotel.pnr || "")}">
+      </label>
+      <label>메모
+        <textarea name="note" rows="2">${escapeHtml(hotel.note || "")}</textarea>
+      </label>
+      <button type="submit" class="primary-btn">저장</button>
+    </form>
+  `;
+}
+
+function placeForm(place = {}) {
+  return `
+    <form class="stack-form" data-form="place">
+      <input type="hidden" name="id" value="${place.id || ""}">
+      <input type="hidden" name="date" value="${place.date || ""}">
+      <input type="hidden" name="lat" value="${place.lat ?? ""}">
+      <input type="hidden" name="lng" value="${place.lng ?? ""}">
+      <label>장소 이름
+        <input type="text" name="title" value="${escapeHtml(place.title || "")}" required placeholder="도톤보리">
+      </label>
+      <label>시간
+        <input type="time" name="time" value="${escapeHtml(place.time || "")}">
+      </label>
+      <label>메모
+        <textarea name="note" rows="2">${escapeHtml(place.note || "")}</textarea>
+      </label>
+      ${Number.isFinite(place.lat) ? `<p class="hint">위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>` : `<p class="hint">위치는 지도 탭에서 찍을 수 있어요.</p>`}
+      <button type="submit" class="primary-btn">저장</button>
+    </form>
+  `;
+}
+
+function openPlaceSheet(trip, defaults) {
+  const sheet = openSheet(defaults.id ? "장소 수정" : "장소 추가", placeForm(defaults));
+  sheet.querySelector("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    savePlace(trip, new FormData(event.target));
+  });
+}
+
+function savePlace(trip, formData) {
+  const date = String(formData.get("date") || selectedDates[trip.id] || "");
+  if (!date) {
+    toast("날짜를 먼저 저장하세요.");
+    return;
+  }
+  const existingId = String(formData.get("id") || "");
+  const latRaw = formData.get("lat");
+  const lngRaw = formData.get("lng");
+  const lat = latRaw === "" ? null : Number(latRaw);
+  const lng = lngRaw === "" ? null : Number(lngRaw);
+  if (existingId) {
+    const place = trip.places.find((item) => item.id === existingId);
+    if (!place) return;
+    place.title = String(formData.get("title") || "").trim();
+    place.time = String(formData.get("time") || "");
+    place.note = String(formData.get("note") || "").trim();
+    place.date = date;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      place.lat = lat;
+      place.lng = lng;
+    }
+  } else {
+    const order = placesForDate(trip, date).length + 1;
+    trip.places.push({
+      id: uid("place"),
+      date,
+      order,
+      title: String(formData.get("title") || "").trim(),
+      time: String(formData.get("time") || ""),
+      note: String(formData.get("note") || "").trim(),
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
+    });
+  }
+  upsertTrip(trip);
+  closeSheet();
+  render();
+}
+
+function render() {
+  const route = parseRoute();
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const dateParam = params.get("d") || "";
+
+  if (route.name === "new") {
+    renderNew();
+    return;
+  }
+  if (route.name === "trip") {
+    const trip = getTrip(route.id);
+    if (!trip) {
+      go("/");
+      toast("여행을 찾을 수 없습니다.");
+      return;
+    }
+    if (dateParam) selectedDates[trip.id] = dateParam;
+    if (route.tab === "plan") renderPlan(trip, dateParam);
+    else if (route.tab === "map") renderMapTab(trip, dateParam);
+    else if (route.tab === "bingo") renderBingoTab(trip);
+    else renderInfo(trip);
+    return;
+  }
+  renderHome();
+}
+
+function onClick(event) {
+  const btn = event.target.closest("[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  const trip = id ? getTrip(id) : null;
+
+  if (action === "export") {
+    exportJson();
+    toast("trips.json을 저장했습니다.");
+    return;
+  }
+  if (action === "import") {
+    fileInput.click();
+    return;
+  }
+  if (action === "new-trip") {
+    go("/new");
+    return;
+  }
+  if (action === "delete-trip" && trip) {
+    if (!window.confirm(`“${trip.name}”을 삭제할까요?`)) return;
+    deleteTrip(trip.id);
+    render();
+    return;
+  }
+  if (action === "edit-trip" && trip) {
+    const sheet = openSheet("여행 수정", `
+      <form class="stack-form" data-form="edit-trip">
+        <label>여행 이름
+          <input type="text" name="name" value="${escapeHtml(trip.name)}" required>
+        </label>
+        <label>목적지
+          <input type="text" name="destination" value="${escapeHtml(trip.destination)}">
+        </label>
+        <button type="submit" class="primary-btn">저장</button>
+      </form>
+    `);
+    sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      const data = new FormData(submitEvent.target);
+      trip.name = String(data.get("name") || "").trim();
+      trip.destination = String(data.get("destination") || "").trim();
+      upsertTrip(trip);
+      closeSheet();
+      render();
+    });
+    return;
+  }
+  if (action === "add-flight" && trip) {
+    const sheet = openSheet("항공권 추가", flightForm());
+    sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      saveFlight(trip, new FormData(submitEvent.target));
+    });
+    return;
+  }
+  if (action === "edit-flight" && trip) {
+    const flight = trip.flights.find((item) => item.id === btn.dataset.item);
+    const sheet = openSheet("항공권 수정", flightForm(flight));
+    sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      saveFlight(trip, new FormData(submitEvent.target));
+    });
+    return;
+  }
+  if (action === "delete-flight" && trip) {
+    trip.flights = trip.flights.filter((item) => item.id !== btn.dataset.item);
+    upsertTrip(trip);
+    render();
+    return;
+  }
+  if (action === "add-hotel" && trip) {
+    const sheet = openSheet("호텔 추가", hotelForm({
+      checkIn: trip.startDate,
+      checkOut: trip.endDate,
+    }));
+    sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      saveHotel(trip, new FormData(submitEvent.target));
+    });
+    return;
+  }
+  if (action === "edit-hotel" && trip) {
+    const hotel = trip.hotels.find((item) => item.id === btn.dataset.item);
+    const sheet = openSheet("호텔 수정", hotelForm(hotel));
+    sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      saveHotel(trip, new FormData(submitEvent.target));
+    });
+    return;
+  }
+  if (action === "delete-hotel" && trip) {
+    trip.hotels = trip.hotels.filter((item) => item.id !== btn.dataset.item);
+    upsertTrip(trip);
+    render();
+    return;
+  }
+  if (action === "add-place" && trip) {
+    openPlaceSheet(trip, { date: selectedDates[trip.id] });
+    return;
+  }
+  if (action === "edit-place" && trip) {
+    const place = trip.places.find((item) => item.id === btn.dataset.item);
+    if (place) openPlaceSheet(trip, place);
+    return;
+  }
+  if (action === "delete-place" && trip) {
+    const place = trip.places.find((item) => item.id === btn.dataset.item);
+    trip.places = trip.places.filter((item) => item.id !== btn.dataset.item);
+    if (place) reindexPlaces(trip, place.date);
+    upsertTrip(trip);
+    render();
+    return;
+  }
+  if (action === "move-place" && trip) {
+    const dir = Number(btn.dataset.dir);
+    const place = trip.places.find((item) => item.id === btn.dataset.item);
+    if (!place) return;
+    const list = placesForDate(trip, place.date);
+    const index = list.findIndex((item) => item.id === place.id);
+    const swap = list[index + dir];
+    if (!swap) return;
+    const order = place.order;
+    place.order = swap.order;
+    swap.order = order;
+    reindexPlaces(trip, place.date);
+    upsertTrip(trip);
+    render();
+    return;
+  }
+  if (action === "reset-bingo" && trip) {
+    if (!window.confirm("빙고 체크를 모두 지울까요?")) return;
+    trip.bingo.checked = [];
+    upsertTrip(trip);
+    render();
+    return;
+  }
+  if (action === "reset-all") {
+    if (!window.confirm("브라우저에 저장된 내용을 지우고 샘플로 되돌릴까요?")) return;
+    resetToSeed();
+    go("/");
+    render();
+  }
+}
+
+function saveFlight(trip, data) {
+  const id = String(data.get("id") || "");
+  const payload = {
+    id: id || uid("flight"),
+    airline: String(data.get("airline") || "").trim(),
+    flightNo: String(data.get("flightNo") || "").trim(),
+    from: String(data.get("from") || "").trim(),
+    to: String(data.get("to") || "").trim(),
+    departAt: String(data.get("departAt") || ""),
+    arriveAt: String(data.get("arriveAt") || ""),
+    pnr: String(data.get("pnr") || "").trim(),
+    note: String(data.get("note") || "").trim(),
+  };
+  const index = trip.flights.findIndex((item) => item.id === payload.id);
+  if (index >= 0) trip.flights[index] = payload;
+  else trip.flights.push(payload);
+  upsertTrip(trip);
+  closeSheet();
+  render();
+}
+
+function saveHotel(trip, data) {
+  const id = String(data.get("id") || "");
+  const payload = {
+    id: id || uid("hotel"),
+    name: String(data.get("name") || "").trim(),
+    checkIn: String(data.get("checkIn") || ""),
+    checkOut: String(data.get("checkOut") || ""),
+    address: String(data.get("address") || "").trim(),
+    pnr: String(data.get("pnr") || "").trim(),
+    note: String(data.get("note") || "").trim(),
+  };
+  const index = trip.hotels.findIndex((item) => item.id === payload.id);
+  if (index >= 0) trip.hotels[index] = payload;
+  else trip.hotels.push(payload);
+  upsertTrip(trip);
+  closeSheet();
+  render();
+}
+
+app.addEventListener("click", onClick);
+app.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
+  if (form.dataset.form === "new-trip") {
+    event.preventDefault();
+    const data = new FormData(form);
+    const trip = upsertTrip({
+      id: uid("trip"),
+      name: String(data.get("name") || "").trim(),
+      destination: String(data.get("destination") || "").trim(),
+      startDate: String(data.get("startDate") || ""),
+      endDate: String(data.get("endDate") || ""),
+      flights: [],
+      hotels: [],
+      places: [],
+      bingo: { size: 5, items: [...DEFAULT_BINGO_ITEMS], checked: [] },
+    });
+    go(`/trip/${trip.id}`);
+    return;
+  }
+  if (form.dataset.form === "dates") {
+    event.preventDefault();
+    const trip = getTrip(form.dataset.id);
+    if (!trip) return;
+    const data = new FormData(form);
+    const startDate = String(data.get("startDate") || "");
+    const endDate = String(data.get("endDate") || "");
+    if (startDate && endDate && startDate > endDate) {
+      toast("종료일이 시작일보다 빠릅니다.");
+      return;
+    }
+    trip.startDate = startDate;
+    trip.endDate = endDate;
+    upsertTrip(trip);
+    toast("날짜를 저장했습니다.");
+    render();
+  }
+});
+
+fileInput.addEventListener("change", async () => {
+  const file = fileInput.files?.[0];
+  fileInput.value = "";
+  if (!file) return;
+  try {
+    importJson(await file.text());
+    toast("JSON을 가져왔습니다.");
+    render();
+  } catch (error) {
+    toast(error.message || "가져오기에 실패했습니다.");
+  }
+});
+
+window.addEventListener("hashchange", render);
+
+initStorage()
+  .then(() => {
+    render();
+  })
+  .catch((error) => {
+    app.innerHTML = `<div class="empty">데이터를 불러오지 못했습니다.<br>${escapeHtml(error.message)}</div>`;
+  });
