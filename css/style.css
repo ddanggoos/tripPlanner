@@ -279,6 +279,23 @@ p { margin: 0; }
 
 .hint { color: var(--muted); font-size: 13px; margin-top: 10px; }
 
+.help-copy {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.55;
+  display: grid;
+  gap: 12px;
+}
+
+.help-copy ol {
+  margin: 0;
+  padding-left: 1.2em;
+  display: grid;
+  gap: 8px;
+}
+
+.share-status { margin-top: 10px; }
+
 .ticket-card, .hotel-card {
   padding: 14px;
   margin-top: 10px;

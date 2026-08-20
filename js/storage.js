@@ -47,6 +47,8 @@ export function normalizeTrip(trip = {}) {
     destination: trip.destination || "",
     startDate: trip.startDate || "",
     endDate: trip.endDate || "",
+    shareId: trip.shareId || "",
+    updatedAt: Number(trip.updatedAt) || 0,
     flights: Array.isArray(trip.flights) ? trip.flights : [],
     hotels: Array.isArray(trip.hotels) ? trip.hotels : [],
     places: Array.isArray(trip.places) ? trip.places : [],
@@ -61,6 +63,14 @@ export function normalizeTrip(trip = {}) {
 function normalizeState(raw) {
   const trips = Array.isArray(raw?.trips) ? raw.trips.map(normalizeTrip) : [];
   return { trips };
+}
+
+let afterSave = null;
+let afterDelete = null;
+
+export function setSyncHooks({ onSave, onDelete } = {}) {
+  afterSave = onSave || null;
+  afterDelete = onDelete || null;
 }
 
 export function getState() {
@@ -90,18 +100,29 @@ export function getTrip(id) {
   return state.trips.find((trip) => trip.id === id) || null;
 }
 
-export function upsertTrip(trip) {
+export function getTripByShareId(shareId) {
+  if (!shareId) return null;
+  return state.trips.find((trip) => trip.shareId === shareId) || null;
+}
+
+export function upsertTrip(trip, options = {}) {
   const next = normalizeTrip(trip);
-  const index = state.trips.findIndex((item) => item.id === next.id);
+  if (!options.fromRemote) next.updatedAt = Date.now();
+  const index = state.trips.findIndex((item) => (
+    item.id === next.id || (next.shareId && item.shareId === next.shareId)
+  ));
   if (index >= 0) state.trips[index] = next;
   else state.trips.unshift(next);
   save();
+  if (!options.fromRemote) afterSave?.(next);
   return next;
 }
 
 export function deleteTrip(id) {
-  state.trips = state.trips.filter((trip) => trip.id !== id);
+  const trip = state.trips.find((item) => item.id === id);
+  state.trips = state.trips.filter((item) => item.id !== id);
   save();
+  afterDelete?.(trip);
 }
 
 export function exportJson() {
