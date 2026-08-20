@@ -40,8 +40,27 @@ function go(path) {
   location.hash = path;
 }
 
-function phoneRoot() {
-  return document.querySelector(".phone") || document.body;
+function overlayRoot() {
+  return document.body;
+}
+
+function syncThemeColor() {
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const color = dark ? "#000000" : "#f2f2f7";
+  let meta = document.querySelector('meta[name="theme-color"]:not([media])');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.setAttribute("name", "theme-color");
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute("content", color);
+}
+
+function syncViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const bottom = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  document.documentElement.style.setProperty("--vv-bottom", `${bottom}px`);
 }
 
 function toast(message) {
@@ -49,7 +68,7 @@ function toast(message) {
   if (!el) {
     el = document.createElement("div");
     el.className = "toast";
-    phoneRoot().appendChild(el);
+    overlayRoot().appendChild(el);
   }
   el.textContent = message;
   el.classList.add("is-show");
@@ -105,7 +124,7 @@ function openSheet(title, bodyHtml) {
     <div class="sheet-body">${bodyHtml}</div>
   `;
   sheet.querySelector("[data-close-sheet]").addEventListener("click", closeSheet);
-  phoneRoot().append(backdrop, sheet);
+  overlayRoot().append(backdrop, sheet);
   requestAnimationFrame(() => {
     backdrop.classList.add("is-open");
     sheet.classList.add("is-open");
@@ -869,6 +888,12 @@ fileInput.addEventListener("change", async () => {
 });
 
 window.addEventListener("hashchange", render);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncThemeColor);
+window.visualViewport?.addEventListener("resize", syncViewport);
+window.visualViewport?.addEventListener("scroll", syncViewport);
+window.addEventListener("resize", syncViewport);
+syncThemeColor();
+syncViewport();
 
 initStorage()
   .then(() => {
