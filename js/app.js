@@ -1061,7 +1061,7 @@ app.addEventListener("submit", (event) => {
   }
 });
 
-fileInput.addEventListener("change", async () => {
+fileInput?.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
   fileInput.value = "";
   if (!file) return;
@@ -1083,23 +1083,28 @@ syncThemeColor();
 syncViewport();
 
 initStorage()
-  .then(async () => {
+  .then(() => {
     setSyncHooks({
       onSave: (trip) => schedulePush(trip),
       onDelete: (trip) => {
         if (trip?.shareId) removeSharedTrip(trip.shareId);
       },
     });
-    await initSync({
+    render();
+    return initSync({
       onRemoteTrip: (remote) => {
         upsertTrip(remote, { fromRemote: true });
         if (!document.querySelector(".sheet.is-open")) render();
       },
     });
-    getState().trips.forEach((trip) => {
-      if (trip.shareId) subscribeTrip(trip.shareId);
-    });
-    render();
+  })
+  .then((connected) => {
+    if (connected) {
+      getState().trips.forEach((trip) => {
+        if (trip.shareId) subscribeTrip(trip.shareId);
+      });
+      render();
+    }
   })
   .catch((error) => {
     app.innerHTML = `<div class="empty">데이터를 불러오지 못했습니다.<br>${escapeHtml(error.message)}</div>`;

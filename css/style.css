@@ -53,6 +53,18 @@ html, body {
   line-height: 1.45;
 }
 
+.boot {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  padding: 24px;
+}
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
 button, a, input, textarea, select {
   font: inherit;
   color: inherit;
