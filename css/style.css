@@ -60,10 +60,6 @@ html, body {
   color: var(--muted);
   padding: 24px;
 }
-  font-family: var(--font);
-  font-size: 16px;
-  line-height: 1.45;
-}
 
 button, a, input, textarea, select {
   font: inherit;
@@ -412,6 +408,23 @@ p { margin: 0; }
 .home-footer {
   text-align: center;
   padding-bottom: 8px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow);
 }
 
 .tabbar {

@@ -16,7 +16,7 @@ import {
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
 import { initMap, drawRoute, destroyMap, searchPlaces, flyToPlace, googleMapsUrl } from "./map.js";
-import { renderBingo, bindBingo, completedLines } from "./bingo.js";
+import { APP_VERSION } from "./version.js";
 import {
   initSync,
   isFirebaseConfigured,
@@ -259,11 +259,6 @@ function renderJoin(shareId) {
     }
   })();
 }
-  return `
-    <button type="button" class="text-btn" data-action="export">내보내기</button>
-    <button type="button" class="text-btn" data-action="import">가져오기</button>
-  `;
-}
 
 function headerActions() {
   return `
@@ -301,7 +296,10 @@ function renderHome() {
       </header>
       <main class="content">
         ${cards}
-        <p class="home-footer"><button type="button" class="text-btn" data-action="reset-all">샘플로 되돌리기</button></p>
+        <p class="home-footer">
+          <span class="version-badge">v${APP_VERSION}</span>
+          <button type="button" class="text-btn" data-action="reset-all">샘플로 되돌리기</button>
+        </p>
       </main>
       <div class="fab-space"></div>
       <button type="button" class="fab" data-action="new-trip">새 여행</button>
