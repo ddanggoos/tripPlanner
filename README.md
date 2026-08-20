@@ -29,10 +29,11 @@ python3 -m http.server 4173
 
 그다음 휴대폰과 같은 네트워크면 `http://<컴퓨터IP>:4173` 으로 아이폰 사파리에서 확인하면 됩니다.
 
-## GitHub Pages 켜기
+## GitHub Pages
 
-1. 이 저장소 **Settings → Pages**
-2. Source를 **GitHub Actions** 로 선택
-3. `main`에 푸시되면 [Deploy GitHub Pages](.github/workflows/pages.yml) 워크플로가 배포합니다.
+배포 주소: https://ddanggoos.github.io/tripPlanner/
+
+`main`에 푸시되면 [Deploy GitHub Pages](.github/workflows/pages.yml)가 자동으로 올립니다.
+저장소 **Settings → Pages → Source: GitHub Actions** 가 켜져 있어야 합니다.
 
 아이폰 사파리에서 공유 → 홈 화면에 추가 하면 앱처럼 열립니다.
