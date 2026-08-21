@@ -1,3 +1,5 @@
+// 웹 API 키는 클라이언트에 공개되는 식별자라 비밀키가 아닙니다.
+// Maps 키는 여기에 두지 말고 Firebase appConfig/googleMapsApiKey 에만 넣으세요.
 export const firebaseConfig = {
   apiKey: "AIzaSyC6zXh7-T9W4SFyKJv1MmZmCK6dgkaFpQg",
   authDomain: "tripplanner-531c6.firebaseapp.com",

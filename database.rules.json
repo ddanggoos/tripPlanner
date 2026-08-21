@@ -5,6 +5,13 @@
         ".read": true,
         ".write": true
       }
+    },
+    "appConfig": {
+      ".read": true,
+      ".write": false,
+      "googleMapsApiKey": {
+        ".validate": "newData.isString() && newData.val().length < 200"
+      }
     }
   }
 }

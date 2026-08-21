@@ -36,20 +36,21 @@
 
 ## 구글 지도로 장소 찾기
 
-지금 쓰는 Firebase 프로젝트의 웹 API 키로 Maps를 불러옵니다. Cloud Console에서 아래 API만 켜면 검색·지도 탭이 구글 지도로 바뀝니다. 켜기 전에는 예전처럼 OpenStreetMap으로 동작합니다.
+Maps API 키는 **깃허브에 넣지 않습니다.** Firebase Realtime Database의 `appConfig/googleMapsApiKey`에서만 읽습니다.
 
-1. [Google Cloud 콘솔](https://console.cloud.google.com/google/maps-apis)에서 Firebase와 같은 프로젝트 선택
-2. **Maps JavaScript API**, **Places API** (New), **Geocoding API** 사용 설정
-3. 결제 계정 연결 (Maps는 월 크레딧이 있어 개인 여행 용도로는 보통 무료 범위입니다)
-4. API 키 제한:
-   - 애플리케이션: HTTP 리퍼러
+브라우저에서 지도를 그리는 키는 네트워크 탭에 보일 수 있습니다. 그래서 탈취돼도 우리 사이트에서만 쓰이게 구글 콘솔에서 잠급니다.
+
+1. [Google Cloud 사용자 인증 정보](https://console.cloud.google.com/apis/credentials)에서 **Maps 전용 키를 새로 만들기** (저장소에 있는 Firebase 웹 키와 분리)
+2. 이 키에만 **Maps JavaScript API**, **Places API**, **Geocoding API** 허용. Firebase 웹 키에서는 Maps를 끄기
+3. 애플리케이션 제한: HTTP 리퍼러
    - `https://ddanggoos.github.io/*`
    - `http://localhost:*`
    - `http://127.0.0.1:*`
-   - API 제한: 위에서 켠 세 가지
-5. 키를 따로 쓰려면 [`js/maps-config.js`](js/maps-config.js)의 `GOOGLE_MAPS_API_KEY`에 넣기. 비워 두면 Firebase 키를 씁니다.
+4. [할당량·예산 알림](https://console.cloud.google.com/billing)을 걸어 이상 청구를 막기
+5. Realtime Database 규칙을 저장소의 [`database.rules.json`](database.rules.json)으로 다시 붙여 넣기 (`appConfig`는 읽기만, 쓰기는 콘솔만)
+6. Realtime Database → Data에서 `appConfig` 추가 후 `googleMapsApiKey`에 Maps 전용 키 붙여 넣기
 
-지도 탭에서 상호를 검색하거나, 지도의 가게를 누르면 장소 시트에 이름과 좌표가 채워집니다. 일정 탭의 장소 추가에도 같은 검색창이 있습니다.
+키가 없거나 막혀 있으면 예전처럼 OpenStreetMap으로 검색·지도가 동작합니다.
 
 ## 로컬에서 보기
 

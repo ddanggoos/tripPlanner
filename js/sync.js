@@ -13,6 +13,57 @@ let pendingTrip = null;
 
 export { isFirebaseConfigured };
 
+const MAPS_KEY_PATH = "appConfig/googleMapsApiKey";
+let mapsApiKey = "";
+let mapsKeyPromise = null;
+
+function looksLikeMapsKey(value) {
+  return typeof value === "string" && /^AIza[0-9A-Za-z_-]{20,}$/.test(value.trim());
+}
+
+export async function fetchMapsApiKey() {
+  if (mapsApiKey) return mapsApiKey;
+  if (mapsKeyPromise) return mapsKeyPromise;
+  mapsKeyPromise = (async () => {
+    const fromRest = await fetchMapsKeyRest();
+    if (fromRest) {
+      mapsApiKey = fromRest;
+      return mapsApiKey;
+    }
+    if (db && api) {
+      try {
+        const snapshot = await api.get(api.ref(db, MAPS_KEY_PATH));
+        const value = snapshot.val();
+        if (looksLikeMapsKey(value)) {
+          mapsApiKey = value.trim();
+          return mapsApiKey;
+        }
+      } catch (error) {
+        console.warn("Maps key fetch failed", error);
+      }
+    }
+    return "";
+  })();
+  try {
+    return await mapsKeyPromise;
+  } finally {
+    if (!mapsApiKey) mapsKeyPromise = null;
+  }
+}
+
+async function fetchMapsKeyRest() {
+  if (!firebaseConfig.databaseURL) return "";
+  try {
+    const url = `${firebaseConfig.databaseURL.replace(/\/$/, "")}/${MAPS_KEY_PATH}.json`;
+    const res = await withTimeout(fetch(url), 8000, "maps-key");
+    if (!res.ok) return "";
+    const value = await res.json();
+    return looksLikeMapsKey(value) ? value.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 export function joinUrl(shareId) {
   const path = location.pathname.replace(/index\.html$/, "");
   return `${location.origin}${path}#/join/${encodeURIComponent(shareId)}`;

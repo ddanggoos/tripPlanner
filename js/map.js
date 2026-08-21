@@ -1,4 +1,4 @@
-import { googleMapsApiKey, isGoogleMapsConfigured } from "./maps-config.js";
+import { fetchMapsApiKey } from "./sync.js";
 
 const OSM_TILE = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
@@ -55,11 +55,16 @@ function injectGoogleBootstrap(key) {
 
 export async function loadGoogleMaps() {
   if (googleReady) return true;
-  if (googleFailed || !isGoogleMapsConfigured()) return false;
+  if (googleFailed) return false;
   if (googleLoad) return googleLoad;
   googleLoad = (async () => {
     try {
-      injectGoogleBootstrap(googleMapsApiKey);
+      const key = await fetchMapsApiKey();
+      if (!key) {
+        googleLoad = null;
+        return false;
+      }
+      injectGoogleBootstrap(key);
       await window.google.maps.importLibrary("maps");
       await window.google.maps.importLibrary("places");
       await new Promise((resolve) => window.setTimeout(resolve, 80));
