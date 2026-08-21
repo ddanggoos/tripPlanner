@@ -32,11 +32,11 @@ import {
   tagFieldHtml,
   bindTagField,
   parseShopFolderField,
-  parseShopTagField,
+  takeShopTagsFromForm,
   shopItemMeta,
 } from "./shop.js";
-import { renderLedger } from "./ledger.js";
-import { TOGETHER_LABEL, peopleFieldHtml, bindPeopleField, parsePeopleField, prunePersonFromTrip } from "./people.js";
+import { renderLedger, setLedgerView, getLedgerView } from "./ledger.js";
+import { TOGETHER_LABEL, peopleFieldHtml, bindPeopleField, parsePeopleField, prunePersonFromTrip, toggleFilterPerson } from "./people.js";
 import {
   bindAmountInput,
   bindCountryCurrency,
@@ -1036,7 +1036,7 @@ function openShopForm(trip, item = {}, defaults = {}) {
     const current = getTrip(trip.id);
     if (current) saveShop(current, new FormData(submitEvent.target));
   });
-  bindTagField(sheet);
+  bindTagField(sheet, trip);
   bindPeopleField(sheet);
   const imageInput = sheet.querySelector("[name='image']");
   const preview = sheet.querySelector("[data-shop-preview]");
@@ -1730,6 +1730,23 @@ function onClick(event) {
     render();
     return;
   }
+  if (action === "shop-filter-person" && trip) {
+    const view = getShopView(trip.id);
+    setShopView(trip.id, {
+      mode: "all",
+      people: toggleFilterPerson(view.people, btn.dataset.person, trip.people?.items || []),
+    });
+    render();
+    return;
+  }
+  if (action === "ledger-filter-person" && trip) {
+    const view = getLedgerView(trip.id);
+    setLedgerView(trip.id, {
+      people: toggleFilterPerson(view.people, btn.dataset.person, trip.people?.items || []),
+    });
+    render();
+    return;
+  }
   if (action === "add-shop-folder" && trip) {
     openPromptSheet({
       title: "폴더 추가",
@@ -2092,7 +2109,7 @@ async function saveShop(trip, data) {
     image: looksLikeImageData(String(data.get("image") || "")) ? String(data.get("image")) : "",
     bought: false,
     folderId: parseShopFolderField(data, trip),
-    tags: parseShopTagField(data, trip),
+    tags: takeShopTagsFromForm(trip, data, uid),
     people: parsePeopleField(data, trip),
   };
   trip.shop = trip.shop || { folders: [], tags: [], items: [] };

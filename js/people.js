@@ -83,3 +83,41 @@ export function bindPeopleField(root) {
 export function parsePeopleField(data, trip) {
   return normalizePeopleIds(String(data.get("people") || TOGETHER_ID).split(","), trip.people?.items || []);
 }
+
+export function normalizeFilterPeople(raw, roster = []) {
+  const allowed = new Set((Array.isArray(roster) ? roster : []).map((person) => person.id).filter(Boolean));
+  const source = Array.isArray(raw) ? raw.map(String) : String(raw || "").split(",");
+  const next = [...new Set(source.map((id) => id.trim()).filter((id) => id && (id === TOGETHER_ID || allowed.has(id))))];
+  return next.length ? next : [TOGETHER_ID];
+}
+
+export function toggleFilterPerson(selected, id, roster = []) {
+  const cur = new Set(normalizeFilterPeople(selected, roster));
+  if (cur.has(id)) cur.delete(id);
+  else cur.add(id);
+  return normalizeFilterPeople([...cur], roster);
+}
+
+export function itemMatchesPeopleFilter(item, selected, roster = []) {
+  const filter = normalizeFilterPeople(selected, roster);
+  const peopleOnly = filter.filter((id) => id !== TOGETHER_ID);
+  const hasTogether = filter.includes(TOGETHER_ID);
+  if (hasTogether && !peopleOnly.length) return true;
+  const ids = normalizePeopleIds(item?.people, roster);
+  if (hasTogether && ids.includes(TOGETHER_ID)) return true;
+  return ids.some((id) => id !== TOGETHER_ID && peopleOnly.includes(id));
+}
+
+export function peopleFilterHtml(trip, selected, action) {
+  const roster = trip.people?.items || [];
+  const ids = normalizeFilterPeople(selected, roster);
+  const chips = [{ id: TOGETHER_ID, name: TOGETHER_LABEL }, ...roster];
+  return `
+    <p class="filter-label">여행자</p>
+    <div class="chips tag-filter" role="list" aria-label="여행자">
+      ${chips.map((person) => `
+        <button type="button" class="chip ${ids.includes(person.id) ? "is-active" : ""}" data-action="${escapeHtml(action)}" data-id="${trip.id}" data-person="${escapeHtml(person.id)}">${escapeHtml(person.name)}</button>
+      `).join("")}
+    </div>
+  `;
+}

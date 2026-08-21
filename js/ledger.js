@@ -1,5 +1,5 @@
 import { getFxView, itemMoneyHtml, parseAmount, totalsMoneyHtml } from "./money.js";
-import { peopleLabel } from "./people.js";
+import { TOGETHER_ID, itemMatchesPeopleFilter, peopleFilterHtml, peopleLabel } from "./people.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -9,13 +9,51 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+const LEDGER_VIEW_KEY = "tripPlanner:ledgerView";
+
+function loadLedgerViews() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LEDGER_VIEW_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function readPeopleFilter(raw) {
+  const people = Array.isArray(raw) ? [...new Set(raw.map(String).filter(Boolean))] : [];
+  return people.length ? people : [TOGETHER_ID];
+}
+
+export function getLedgerView(tripId) {
+  const raw = loadLedgerViews()[tripId] || {};
+  return { people: readPeopleFilter(raw.people) };
+}
+
+export function setLedgerView(tripId, patch) {
+  const all = loadLedgerViews();
+  const next = { ...getLedgerView(tripId), ...patch };
+  all[tripId] = next;
+  localStorage.setItem(LEDGER_VIEW_KEY, JSON.stringify(all));
+  return next;
+}
+
+export function visibleLedgerItems(trip, view = getLedgerView(trip.id)) {
+  return (trip.ledger?.items || []).filter((item) => (
+    itemMatchesPeopleFilter(item, view.people, trip.people?.items || [])
+  ));
+}
+
 export function ledgerTotal(trip) {
   return (trip.ledger?.items || []).reduce((sum, item) => sum + (parseAmount(item.amount) || 0), 0);
 }
 
 export function renderLedger(trip) {
-  const items = trip.ledger?.items || [];
-  const view = getFxView(trip.id);
+  const view = getLedgerView(trip.id);
+  const all = trip.ledger?.items || [];
+  const items = visibleLedgerItems(trip, view);
+  const peopleFiltered = (view.people || []).some((id) => id !== TOGETHER_ID);
   const rows = items.length
     ? items.map((item) => `
         <article class="ledger-item">
@@ -23,15 +61,16 @@ export function renderLedger(trip) {
             <strong>${escapeHtml(item.title)}</strong>
             <span class="meta">${[peopleLabel(trip, item.people), item.note].filter(Boolean).map(escapeHtml).join(" · ")}</span>
           </button>
-          <div class="ledger-amt">${itemMoneyHtml(item, view) || `<span class="money-pair"><strong class="money-main is-empty">-</strong></span>`}</div>
+          <div class="ledger-amt">${itemMoneyHtml(item, getFxView(trip.id)) || `<span class="money-pair"><strong class="money-main is-empty">-</strong></span>`}</div>
           <button type="button" class="icon-btn danger" data-action="delete-ledger" data-id="${trip.id}" data-item="${item.id}" aria-label="삭제">삭제</button>
         </article>
       `).join("")
-    : `<div class="empty compact"><span class="empty-icon">📒</span>쓴 돈을 추가해 보세요.</div>`;
+    : `<div class="empty compact"><span class="empty-icon">📒</span>${all.length && peopleFiltered ? "이 여행자에 맞는 항목이 없어요." : "쓴 돈을 추가해 보세요."}</div>`;
 
   return `
     <section class="ledger-wrap">
-      <p class="ledger-status">합계 ${totalsMoneyHtml(items, trip.currency, view)}</p>
+      ${peopleFilterHtml(trip, view.people, "ledger-filter-person")}
+      <p class="ledger-status">합계 ${totalsMoneyHtml(items, trip.currency, getFxView(trip.id))}</p>
       ${rows}
     </section>
   `;
