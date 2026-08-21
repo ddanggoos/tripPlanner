@@ -1615,7 +1615,7 @@ function onClick(event) {
   if (action === "bingo-cell" && trip) {
     const index = Number(btn.dataset.index);
     if (!Number.isInteger(index) || index < 0 || index >= BINGO_CELLS) return;
-    if (!trip.bingo.locked) openBingoName(trip, index);
+    if (!trip.bingo.items[index] || !trip.bingo.locked) openBingoName(trip, index);
     else openBingoMark(trip, index);
     return;
   }

@@ -75,11 +75,12 @@ export function renderBingo(trip) {
         data-action="bingo-cell"
         data-id="${trip.id}"
         data-index="${index}"
-        aria-label="${empty ? `${index + 1}칸 이름 적기` : escapeHtml(label)}"
+        aria-label="${empty ? `${index + 1}칸 추가` : escapeHtml(label)}"
       >
         ${showPhoto ? `<img class="bingo-photo" src="${photo}" alt="">` : ""}
-        <span class="bingo-index">${on ? "✅" : index + 1}</span>
-        <span class="bingo-label">${empty ? (locked ? "" : "적기") : escapeHtml(label)}</span>
+        ${empty
+          ? `<span class="bingo-plus" aria-hidden="true">+</span>`
+          : `<span class="bingo-index">${on ? "✅" : index + 1}</span><span class="bingo-label">${escapeHtml(label)}</span>`}
       </button>
     `;
   }).join("");
