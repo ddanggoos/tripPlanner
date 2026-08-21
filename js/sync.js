@@ -1,4 +1,4 @@
-import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
+import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js?v=0.4.4";
 
 const FIREBASE_APP_URL = "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 const FIREBASE_DB_URL = "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
@@ -160,6 +160,6 @@ export async function removeSharedTrip(shareId) {
 
 export async function fetchSharedTrip(shareId) {
   if (!db || !api || !shareId) return null;
-  const snapshot = await api.get(tripRef(shareId));
+  const snapshot = await withTimeout(api.get(tripRef(shareId)), 8000, "shared-trip");
   return snapshot.val() || null;
 }
