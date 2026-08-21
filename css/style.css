@@ -490,6 +490,7 @@ a.more-row {
 
 .stack-form input,
 .stack-form textarea,
+.stack-form select,
 .search-form input {
   width: 100%;
   max-width: 100%;
@@ -1200,6 +1201,110 @@ a.more-row {
   font-size: 14px;
 }
 
+.fx-dock {
+  display: grid;
+  gap: 8px;
+  margin: 0 2px 14px;
+}
+
+.fx-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.fx-toggle button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-weight: 700;
+}
+
+.fx-toggle button.is-on {
+  background: var(--accent-grad);
+  color: #fff;
+  box-shadow: var(--shadow-accent);
+}
+
+.fx-rate {
+  margin: 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.money-pair {
+  display: grid;
+  gap: 1px;
+  justify-items: start;
+}
+
+.money-main {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.money-sub {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.photo-price .money-pair { gap: 2px; }
+.photo-price .money-main { font-size: 20px; }
+
+.ledger-wrap { padding: 0 2px 12px; }
+
+.ledger-status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 4px 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.ledger-status .money-main { font-size: 20px; color: var(--ink); }
+
+.ledger-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 14px;
+  margin-bottom: 8px;
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.ledger-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  min-height: 44px;
+}
+
+.ledger-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ledger-amt {
+  justify-self: end;
+}
+
+.ledger-amt .money-pair { justify-items: end; }
+
 .shop-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1254,9 +1359,23 @@ a.more-row {
   color: #fff;
   font-size: 12px;
   font-weight: 700;
+  display: grid;
+  gap: 2px;
+  z-index: 4;
+}
+
+.shop-tile-copy {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.shop-tile-price .money-main {
+  font-size: 11px;
+}
+
+.shop-tile-price .money-sub {
+  font-size: 10px;
 }
 
 .shop-tile:not(.tint-photo) .shop-tile-name {

@@ -4,6 +4,8 @@
       "id": "trip-sample",
       "name": "샘플 여행",
       "destination": "목적지 미정",
+      "country": "KR",
+      "currency": "KRW",
       "startDate": "",
       "endDate": "",
       "flights": [],
