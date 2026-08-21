@@ -15,10 +15,36 @@ let googleMarkers = [];
 let googleLine = null;
 let googleInfo = null;
 let googleClick = null;
+let googleRenderer = null;
+let lastGooglePlaces = [];
 let googleReady = false;
 let googleFailed = false;
 let googleLoad = null;
 let autocompleteToken = null;
+
+const ROUTE_MODE_KEY = "tripPlanner:routeMode";
+
+export function getRouteMode() {
+  return localStorage.getItem(ROUTE_MODE_KEY) === "DRIVING" ? "DRIVING" : "WALKING";
+}
+
+export function setRouteMode(mode) {
+  localStorage.setItem(ROUTE_MODE_KEY, mode === "DRIVING" ? "DRIVING" : "WALKING");
+  if (engine === "google" && lastGooglePlaces.length) drawGoogleRoute(lastGooglePlaces);
+}
+
+export function googleMapsDirUrl(places, mode = getRouteMode()) {
+  const points = (places || []).filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
+  if (points.length < 2) return "";
+  const url = new URL("https://www.google.com/maps/dir/");
+  url.searchParams.set("api", "1");
+  url.searchParams.set("origin", `${points[0].lat},${points[0].lng}`);
+  url.searchParams.set("destination", `${points[points.length - 1].lat},${points[points.length - 1].lng}`);
+  url.searchParams.set("travelmode", mode === "DRIVING" ? "driving" : "walking");
+  const via = points.slice(1, -1).slice(0, 9);
+  if (via.length) url.searchParams.set("waypoints", via.map((place) => `${place.lat},${place.lng}`).join("|"));
+  return url.toString();
+}
 
 export function isGoogleMapsReady() {
   return googleReady;
@@ -97,6 +123,7 @@ export function destroyMap() {
   });
   googleLine?.setMap?.(null);
   googleInfo?.close?.();
+  googleRenderer?.setMap?.(null);
   if (googleMap) {
     window.google?.maps?.event?.clearInstanceListeners?.(googleMap);
   }
@@ -105,6 +132,8 @@ export function destroyMap() {
   googleLine = null;
   googleInfo = null;
   googleClick = null;
+  googleRenderer = null;
+  lastGooglePlaces = [];
   engine = null;
 }
 
@@ -189,17 +218,6 @@ export function flyToPlace(place) {
   if (engine === "google" && googleMap) {
     googleMap.panTo({ lat: place.lat, lng: place.lng });
     if ((googleMap.getZoom() || 12) < 15) googleMap.setZoom(16);
-    const marker = googleMarkers.find((item) => {
-      const pos = item.getPosition?.() || item.position;
-      if (!pos) return false;
-      const lat = typeof pos.lat === "function" ? pos.lat() : pos.lat;
-      const lng = typeof pos.lng === "function" ? pos.lng() : pos.lng;
-      return Math.abs(lat - place.lat) < 1e-6 && Math.abs(lng - place.lng) < 1e-6;
-    });
-    if (marker && googleInfo) {
-      googleInfo.setContent(`<strong>${escapeHtml(place.title || "장소")}</strong>`);
-      googleInfo.open(googleMap, marker);
-    }
     return;
   }
   if (!leafletMap) return;
@@ -308,10 +326,13 @@ export function drawRoute(places) {
 
 async function drawGoogleRoute(places) {
   if (!googleMap) return;
+  lastGooglePlaces = places;
   googleMarkers.forEach((marker) => marker.setMap?.(null));
   googleMarkers = [];
   googleLine?.setMap(null);
   googleLine = null;
+  googleRenderer?.setMap(null);
+  googleInfo?.close?.();
 
   const points = places
     .filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng))
@@ -340,25 +361,25 @@ async function drawGoogleRoute(places) {
       },
     });
     marker.addListener("click", () => {
-      googleInfo?.setContent(`
-        <strong>${escapeHtml(place.title || "장소")}</strong><br>
-        ${place.time ? `${escapeHtml(place.time)} · ` : ""}${index + 1}번째
-      `);
-      googleInfo?.open(googleMap, marker);
+      flyToPlace(place);
     });
     googleMarkers.push(marker);
   });
 
   if (points.length >= 2) {
-    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#007aff";
-    googleLine = new google.maps.Polyline({
-      path: points,
-      geodesic: true,
-      strokeColor: accent,
-      strokeOpacity: 0.9,
-      strokeWeight: 4,
-      map: googleMap,
-    });
+    try {
+      await drawRoadRoute(points, accent);
+    } catch (error) {
+      console.warn("directions failed", error);
+      googleLine = new google.maps.Polyline({
+        path: points,
+        geodesic: true,
+        strokeColor: accent,
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map: googleMap,
+      });
+    }
   }
 
   if (points.length === 1) {
@@ -369,6 +390,35 @@ async function drawGoogleRoute(places) {
     points.forEach((point) => bounds.extend(point));
     googleMap.fitBounds(bounds, { top: 120, right: 40, bottom: 140, left: 40 });
   }
+}
+
+async function drawRoadRoute(points, accent) {
+  const service = new google.maps.DirectionsService();
+  if (!googleRenderer) {
+    googleRenderer = new google.maps.DirectionsRenderer({
+      suppressMarkers: true,
+      preserveViewport: true,
+    });
+  }
+  googleRenderer.setOptions({
+    polylineOptions: {
+      strokeColor: accent,
+      strokeOpacity: 0.92,
+      strokeWeight: 5,
+    },
+  });
+  googleRenderer.setMap(googleMap);
+  const travelMode = getRouteMode() === "DRIVING"
+    ? google.maps.TravelMode.DRIVING
+    : google.maps.TravelMode.WALKING;
+  const result = await service.route({
+    origin: points[0],
+    destination: points[points.length - 1],
+    waypoints: points.slice(1, -1).slice(0, 25).map((location) => ({ location, stopover: true })),
+    travelMode,
+    optimizeWaypoints: false,
+  });
+  googleRenderer.setDirections(result);
 }
 
 function coordsOf(location) {
