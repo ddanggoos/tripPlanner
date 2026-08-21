@@ -1,4 +1,5 @@
 import { getFxView, itemMoneyHtml, parseAmount, totalsMoneyHtml } from "./money.js";
+import { peopleLabel } from "./people.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -20,7 +21,7 @@ export function renderLedger(trip) {
         <article class="ledger-item">
           <button type="button" class="ledger-main" data-action="edit-ledger" data-id="${trip.id}" data-item="${item.id}">
             <strong>${escapeHtml(item.title)}</strong>
-            ${item.note ? `<span class="meta">${escapeHtml(item.note)}</span>` : ""}
+            <span class="meta">${[peopleLabel(trip, item.people), item.note].filter(Boolean).map(escapeHtml).join(" · ")}</span>
           </button>
           <div class="ledger-amt">${itemMoneyHtml(item, view) || `<span class="money-pair"><strong class="money-main is-empty">-</strong></span>`}</div>
           <button type="button" class="icon-btn danger" data-action="delete-ledger" data-id="${trip.id}" data-item="${item.id}" aria-label="삭제">삭제</button>
