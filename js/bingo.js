@@ -1,4 +1,34 @@
-export function completedLines(checked, size = 5) {
+export const BINGO_SIZE = 5;
+export const BINGO_CELLS = 25;
+
+export function emptyBingo() {
+  return {
+    size: BINGO_SIZE,
+    items: Array.from({ length: BINGO_CELLS }, () => ""),
+    photos: Array.from({ length: BINGO_CELLS }, () => ""),
+    checked: [],
+    locked: false,
+  };
+}
+
+export function bingoFilledCount(bingo = {}) {
+  return (bingo.items || []).filter((item) => String(item || "").trim()).length;
+}
+
+export function bingoReady(bingo = {}) {
+  return bingoFilledCount(bingo) === BINGO_CELLS;
+}
+
+export function bingoStatus(bingo = {}) {
+  if (!bingo.locked) {
+    const filled = bingoFilledCount(bingo);
+    return filled ? `${filled}/25 채움` : "칸을 채워 확정하세요";
+  }
+  const lines = completedLines(bingo.checked || []).length;
+  return `${lines}줄 완성`;
+}
+
+export function completedLines(checked, size = BINGO_SIZE) {
   const set = new Set(checked);
   const lines = [];
   for (let row = 0; row < size; row += 1) {
@@ -16,72 +46,64 @@ export function completedLines(checked, size = 5) {
   return lines;
 }
 
-export function renderBingo(trip, { onToggle, onEditItem } = {}) {
-  const size = trip.bingo.size || 5;
-  const checked = new Set(trip.bingo.checked || []);
-  const lines = completedLines(trip.bingo.checked || [], size);
-  const items = trip.bingo.items || [];
+export function renderBingo(trip) {
+  const bingo = trip.bingo || emptyBingo();
+  const size = bingo.size || BINGO_SIZE;
+  const locked = Boolean(bingo.locked);
+  const checked = new Set(bingo.checked || []);
+  const lines = completedLines(bingo.checked || [], size);
+  const items = Array.from({ length: BINGO_CELLS }, (_, index) => bingo.items?.[index] || "");
+  const photos = bingo.photos || [];
+  const filled = bingoFilledCount(bingo);
 
-  const cells = items
-    .map((label, index) => {
-      const on = checked.has(index);
-      return `
-        <button
-          type="button"
-          class="bingo-cell ${on ? "is-on" : ""}"
-          data-action="bingo-toggle"
-          data-index="${index}"
-        >
-          <span class="bingo-index">${on ? "✅" : index + 1}</span>
-          <span class="bingo-label">${escapeHtml(label)}</span>
-        </button>
-      `;
-    })
-    .join("");
+  const cells = items.map((label, index) => {
+    const on = checked.has(index);
+    const photo = looksLikePhoto(photos[index]) ? photos[index] : "";
+    const empty = !label;
+    const classes = [
+      "bingo-cell",
+      on ? "is-on" : "",
+      locked ? "is-play" : "is-setup",
+      empty ? "is-empty" : "",
+      locked && on && photo ? "has-photo" : "",
+    ].filter(Boolean).join(" ");
+    const showPhoto = Boolean(locked && on && photo);
+    return `
+      <button
+        type="button"
+        class="${classes}"
+        data-action="bingo-cell"
+        data-id="${trip.id}"
+        data-index="${index}"
+        aria-label="${empty ? `${index + 1}칸 이름 적기` : escapeHtml(label)}"
+      >
+        ${showPhoto ? `<img class="bingo-photo" src="${photo}" alt="">` : ""}
+        <span class="bingo-index">${on ? "✅" : index + 1}</span>
+        <span class="bingo-label">${empty ? (locked ? "" : "적기") : escapeHtml(label)}</span>
+      </button>
+    `;
+  }).join("");
+
+  const status = locked
+    ? `${lines.length > 0 ? "🎉 " : ""}<strong>${lines.length}줄</strong> 완성 · 칸을 눌러 사진 또는 건너뛰기`
+    : `<strong>${filled}/25</strong> 채움 · 칸을 눌러 이름을 적고 확정하세요`;
 
   return `
     <section class="bingo-wrap">
-      <div class="bingo-status">
-        ${lines.length > 0 ? "🎉 " : ""}<strong>${lines.length}줄</strong> 완성 · 칸을 눌러 체크
-      </div>
+      <div class="bingo-status">${status}</div>
       <div class="bingo-grid" style="--size:${size}">${cells}</div>
-      <p class="hint">✏️ 칸을 길게 누르면 이름을 바꿀 수 있어요.</p>
+      ${locked
+        ? `<p class="hint">칸을 누르면 먹은 사진을 배경으로 넣거나 건너뛸 수 있어요.</p>`
+        : `
+          <p class="hint">25칸을 모두 채운 뒤 확정하면 빙고가 시작됩니다.</p>
+          <button type="button" class="primary-btn" data-action="lock-bingo" data-id="${trip.id}" ${bingoReady(bingo) ? "" : "disabled"}>빙고 확정</button>
+        `}
     </section>
   `;
 }
 
-export function bindBingo(root, { onToggle, onEditItem }) {
-  root.querySelectorAll("[data-action='bingo-toggle']").forEach((button) => {
-    let timer = null;
-    let didLongPress = false;
-
-    button.addEventListener("click", (event) => {
-      if (didLongPress) {
-        event.preventDefault();
-        didLongPress = false;
-        return;
-      }
-      onToggle(Number(button.dataset.index));
-    });
-    button.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      onEditItem(Number(button.dataset.index));
-    });
-    button.addEventListener("touchstart", () => {
-      didLongPress = false;
-      timer = window.setTimeout(() => {
-        timer = null;
-        didLongPress = true;
-        onEditItem(Number(button.dataset.index));
-      }, 480);
-    }, { passive: true });
-    const cancel = () => {
-      if (timer) window.clearTimeout(timer);
-      timer = null;
-    };
-    button.addEventListener("touchend", cancel);
-    button.addEventListener("touchmove", cancel);
-  });
+function looksLikePhoto(value) {
+  return typeof value === "string" && value.startsWith("data:image/") && value.length > 32;
 }
 
 function escapeHtml(value) {

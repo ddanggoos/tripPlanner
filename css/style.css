@@ -551,6 +551,12 @@ a.more-row {
 
 .primary-btn:active { opacity: 0.88; transform: scale(0.98); }
 
+.primary-btn:disabled {
+  opacity: 0.4;
+  transform: none;
+  box-shadow: none;
+}
+
 .ghost-btn, .icon-btn {
   min-height: 44px;
   min-width: 44px;
@@ -1078,6 +1084,7 @@ a.more-row {
 }
 
 .bingo-wrap { padding-bottom: 8px; }
+.bingo-wrap .primary-btn { margin-top: 14px; }
 .bingo-status { margin-bottom: 10px; font-size: 14px; }
 .bingo-grid {
   display: grid;
@@ -1086,6 +1093,7 @@ a.more-row {
 }
 
 .bingo-cell {
+  position: relative;
   aspect-ratio: 1;
   border: 0;
   border-radius: 14px;
@@ -1097,10 +1105,16 @@ a.more-row {
   justify-content: center;
   padding: 4px;
   gap: 2px;
+  overflow: hidden;
   transition: transform 150ms ease, background 150ms ease, box-shadow 150ms ease;
 }
 
 .bingo-cell:active { transform: scale(0.92); }
+
+.bingo-cell.is-empty .bingo-label {
+  color: var(--muted);
+  font-weight: 600;
+}
 
 .bingo-cell.is-on {
   background: var(--accent-grad);
@@ -1109,16 +1123,63 @@ a.more-row {
   animation: bingo-pop 260ms ease;
 }
 
+.bingo-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.bingo-cell.has-photo {
+  color: #fff;
+  background: #1d1d1f;
+}
+
+.bingo-cell.has-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+
+.bingo-cell.has-photo.is-on {
+  background: #1d1d1f;
+}
+
+.bingo-preview {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 18px;
+  display: block;
+}
+
 @keyframes bingo-pop {
   0% { transform: scale(0.9); }
   55% { transform: scale(1.08); }
   100% { transform: scale(1); }
 }
 
+.bingo-index,
+.bingo-label {
+  position: relative;
+  z-index: 1;
+}
+
 .bingo-index {
   font-size: 10px;
   opacity: 0.55;
 }
+
+.bingo-cell.has-photo .bingo-index,
+.bingo-cell.has-photo .bingo-label {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.bingo-cell.has-photo .bingo-index { opacity: 0.9; }
 
 .bingo-label {
   font-size: 11px;
