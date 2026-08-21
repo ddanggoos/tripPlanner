@@ -648,12 +648,17 @@ p { margin: 0; }
   text-overflow: ellipsis;
 }
 
-.route-strip {
+.route-dock {
   position: fixed;
   left: 12px;
   right: 12px;
   bottom: calc(var(--chrome-bottom) + 12px + var(--vv-bottom, 0px));
   z-index: 15;
+  display: grid;
+  gap: 8px;
+}
+
+.route-strip {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -666,7 +671,15 @@ p { margin: 0; }
   scrollbar-width: none;
 }
 
-.route-strip::-webkit-scrollbar { display: none; }
+.route-nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.route-strip::-webkit-scrollbar,
+.route-nav::-webkit-scrollbar { display: none; }
 
 .route-stop {
   flex: 0 0 auto;

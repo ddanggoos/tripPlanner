@@ -41,7 +41,7 @@ Maps API 키는 **깃허브에 넣지 않습니다.** Firebase Realtime Database
 브라우저에서 지도를 그리는 키는 네트워크 탭에 보일 수 있습니다. 그래서 탈취돼도 우리 사이트에서만 쓰이게 구글 콘솔에서 잠급니다.
 
 1. [Google Cloud 사용자 인증 정보](https://console.cloud.google.com/apis/credentials)에서 **Maps 전용 키를 새로 만들기** (저장소에 있는 Firebase 웹 키와 분리)
-2. 이 키에만 **Maps JavaScript API**, **Places API**, **Geocoding API** 허용. Firebase 웹 키에서는 Maps를 끄기
+2. 이 키에만 **Maps JavaScript API**, **Places API**, **Geocoding API**, **Directions API** 허용. Firebase 웹 키에서는 Maps를 끄기
 3. 애플리케이션 제한: HTTP 리퍼러
    - `https://ddanggoos.github.io/*`
    - `http://localhost:*`

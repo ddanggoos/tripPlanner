@@ -15,7 +15,7 @@ import {
   setSyncHooks,
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
-import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl } from "./map.js";
+import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl } from "./map.js";
 import { renderBingo, bindBingo, completedLines } from "./bingo.js";
 import { APP_VERSION } from "./version.js";
 import {
@@ -549,22 +549,33 @@ function routeStrip(places) {
   if (!pinned.length) {
     return `<p class="map-hint">📍 지도를 누르거나 장소 이름·구글맵 링크로 추가하세요.</p>`;
   }
+  const mode = getRouteMode();
+  const navi = googleMapsDirUrl(pinned, mode);
   return `
-    <div class="route-strip" role="list">
-      ${pinned.map((place, index) => `
-        <button
-          type="button"
-          class="route-stop"
-          data-action="fly-place"
-          data-lat="${place.lat}"
-          data-lng="${place.lng}"
-          aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
-        >
-          <span class="route-num">${index + 1}</span>
-          <span class="route-name">${escapeHtml(place.title || "장소")}</span>
-        </button>
-        ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
-      `).join("")}
+    <div class="route-dock">
+      <div class="route-strip" role="list">
+        ${pinned.map((place, index) => `
+          <button
+            type="button"
+            class="route-stop"
+            data-action="fly-place"
+            data-lat="${place.lat}"
+            data-lng="${place.lng}"
+            aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
+          >
+            <span class="route-num">${index + 1}</span>
+            <span class="route-name">${escapeHtml(place.title || "장소")}</span>
+          </button>
+          ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
+        `).join("")}
+      </div>
+      ${pinned.length >= 2 ? `
+        <div class="route-nav">
+          <button type="button" class="chip ${mode === "WALKING" ? "is-active" : ""}" data-action="route-mode" data-mode="WALKING">🚶 도보</button>
+          <button type="button" class="chip ${mode === "DRIVING" ? "is-active" : ""}" data-action="route-mode" data-mode="DRIVING">🚗 자동차</button>
+          <a class="chip" href="${escapeHtml(navi)}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -971,6 +982,11 @@ function onClick(event) {
   const action = btn.dataset.action;
   if (action === "fly-place") {
     flyToPlace({ lat: Number(btn.dataset.lat), lng: Number(btn.dataset.lng) });
+    return;
+  }
+  if (action === "route-mode") {
+    setRouteMode(btn.dataset.mode);
+    render();
     return;
   }
   const id = btn.dataset.id;
