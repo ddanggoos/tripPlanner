@@ -1112,9 +1112,11 @@ a.more-row {
 
 .bingo-cell:active { transform: scale(0.92); }
 
-.bingo-cell.is-empty .bingo-label {
+.bingo-cell.is-empty .bingo-plus {
+  font-size: 28px;
+  font-weight: 500;
   color: var(--muted);
-  font-weight: 600;
+  line-height: 1;
 }
 
 .bingo-cell.is-on {

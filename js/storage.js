@@ -59,6 +59,40 @@ function looksLikeStoredImage(value) {
   return typeof value === "string" && value.startsWith("data:image/") && value.length < 400000;
 }
 
+const LEGACY_BINGO_ITEMS = [
+  "현지 아침",
+  "길거리 음식",
+  "로컬 커피",
+  "해산물",
+  "디저트",
+  "면 요리",
+  "야시장",
+  "전통 과자",
+  "맥주/하이볼",
+  "제철 과일",
+  "분식",
+  "고기 요리",
+  "채식 한 끼",
+  "편의점 간식",
+  "베이커리",
+  "매운 음식",
+  "국물 요리",
+  "아이스크림",
+  "와인/사케",
+  "브런치",
+  "현지 특산",
+  "카페 시그니처",
+  "야식",
+  "기념 디저트",
+  "마지막 만찬",
+];
+
+function isLegacyBingoItems(items) {
+  return Array.isArray(items)
+    && items.length === LEGACY_BINGO_ITEMS.length
+    && LEGACY_BINGO_ITEMS.every((label, index) => items[index] === label);
+}
+
 function normalizeBingo(raw = {}) {
   const count = 25;
   const sourceItems = Array.isArray(raw.items) ? raw.items : [];
@@ -71,6 +105,15 @@ function normalizeBingo(raw = {}) {
     ? [...new Set(raw.checked.map((value) => Number(value)).filter((index) => Number.isInteger(index) && index >= 0 && index < count))].sort((a, b) => a - b)
     : [];
   const filled = items.every(Boolean);
+  if (isLegacyBingoItems(items)) {
+    return {
+      size: 5,
+      items: Array.from({ length: count }, () => ""),
+      photos: Array.from({ length: count }, () => ""),
+      checked: [],
+      locked: false,
+    };
+  }
   const locked = raw.locked === true || (raw.locked !== false && filled && checked.length > 0);
   return {
     size: 5,
