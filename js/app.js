@@ -15,7 +15,7 @@ import {
   setSyncHooks,
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
-import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl } from "./map.js";
+import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl, googleMapsHereUrl } from "./map.js";
 import { renderBingo, bindBingo, completedLines } from "./bingo.js";
 import { APP_VERSION } from "./version.js";
 import {
@@ -500,6 +500,13 @@ function renderInfo(trip) {
   `;
 }
 
+function hereNavLink(place, { label = "🧭 길찾기", className = "chip place-here" } = {}) {
+  const href = googleMapsHereUrl(place);
+  if (!href) return "";
+  const title = escapeHtml(place.title || "장소");
+  return `<a class="${className}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" aria-label="현 위치에서 ${title}까지 길찾기">${label}</a>`;
+}
+
 function placeCard(trip, place, index, total) {
   const hasGeo = Number.isFinite(place.lat) && Number.isFinite(place.lng);
   return `
@@ -511,6 +518,7 @@ function placeCard(trip, place, index, total) {
           <p class="meta">${place.time ? escapeHtml(place.time) : "시간 미정"} ${hasGeo ? "· 지도 표시" : "· 위치 없음"}</p>
         </button>
         ${place.note ? `<p class="note">${escapeHtml(place.note)}</p>` : ""}
+        ${hereNavLink(place)}
       </div>
       <div class="place-actions">
         <button type="button" class="icon-btn" data-action="move-place" data-id="${trip.id}" data-item="${place.id}" data-dir="-1" ${index === 0 ? "disabled" : ""} aria-label="위로">↑</button>
@@ -550,32 +558,33 @@ function routeStrip(places) {
     return `<p class="map-hint">📍 지도를 누르거나 장소 이름·구글맵 링크로 추가하세요.</p>`;
   }
   const mode = getRouteMode();
-  const navi = googleMapsDirUrl(pinned, mode);
+  const allNavi = googleMapsDirUrl(pinned, mode, { fromHere: true });
   return `
     <div class="route-dock">
       <div class="route-strip" role="list">
         ${pinned.map((place, index) => `
-          <button
-            type="button"
-            class="route-stop"
-            data-action="fly-place"
-            data-lat="${place.lat}"
-            data-lng="${place.lng}"
-            aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
-          >
-            <span class="route-num">${index + 1}</span>
-            <span class="route-name">${escapeHtml(place.title || "장소")}</span>
-          </button>
+          <div class="route-stop-group" role="listitem">
+            <button
+              type="button"
+              class="route-stop"
+              data-action="fly-place"
+              data-lat="${place.lat}"
+              data-lng="${place.lng}"
+              aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
+            >
+              <span class="route-num">${index + 1}</span>
+              <span class="route-name">${escapeHtml(place.title || "장소")}</span>
+            </button>
+            ${hereNavLink(place, { label: "길찾기", className: "route-here" })}
+          </div>
           ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
         `).join("")}
       </div>
-      ${pinned.length >= 2 ? `
-        <div class="route-nav">
-          <button type="button" class="chip ${mode === "WALKING" ? "is-active" : ""}" data-action="route-mode" data-mode="WALKING">🚶 도보</button>
-          <button type="button" class="chip ${mode === "DRIVING" ? "is-active" : ""}" data-action="route-mode" data-mode="DRIVING">🚗 자동차</button>
-          <a class="chip" href="${escapeHtml(navi)}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>
-        </div>
-      ` : ""}
+      <div class="route-nav">
+        <button type="button" class="chip ${mode === "WALKING" ? "is-active" : ""}" data-action="route-mode" data-mode="WALKING">🚶 도보</button>
+        <button type="button" class="chip ${mode === "DRIVING" ? "is-active" : ""}" data-action="route-mode" data-mode="DRIVING">🚗 자동차</button>
+        ${pinned.length >= 2 ? `<a class="chip" href="${escapeHtml(allNavi)}" target="_blank" rel="noopener noreferrer">🧭 전체 경로</a>` : ""}
+      </div>
     </div>
   `;
 }
@@ -844,7 +853,10 @@ function placeGeoHint(place = {}) {
   if (Number.isFinite(place.lat) && Number.isFinite(place.lng)) {
     return `
       <p class="hint" data-place-geo>📍 위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>
-      <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener noreferrer">🧭 구글 지도에서 보기</a>
+      <div class="place-geo-links">
+        ${hereNavLink(place, { className: "text-btn google-link" })}
+        <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener noreferrer">🗺 구글 지도에서 보기</a>
+      </div>
     `;
   }
   return `<p class="hint" data-place-geo>📍 장소 이름·구글맵 링크로 찾거나 지도 탭에서 찍어 보세요.</p>`;
