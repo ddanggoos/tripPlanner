@@ -34,7 +34,29 @@ import {
 const app = document.getElementById("app");
 const fileInput = document.getElementById("import-file");
 
-let selectedDates = {};
+const SELECTED_DATES_KEY = "tripPlanner:selectedDates";
+
+function loadSelectedDates() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SELECTED_DATES_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function saveSelectedDates() {
+  localStorage.setItem(SELECTED_DATES_KEY, JSON.stringify(selectedDates));
+}
+
+function setSelectedDate(tripId, date) {
+  if (!tripId || !date || selectedDates[tripId] === date) return;
+  selectedDates[tripId] = date;
+  saveSelectedDates();
+}
+
+let selectedDates = loadSelectedDates();
 let searchTimer = null;
 let toastTimer = null;
 
@@ -113,9 +135,12 @@ function daysOf(trip) {
 function selectedDateFor(trip, fallback) {
   const days = daysOf(trip);
   const current = selectedDates[trip.id];
-  if (current && days.includes(current)) return current;
-  if (fallback && days.includes(fallback)) return fallback;
-  return days[0] || "";
+  let next = "";
+  if (current && days.includes(current)) next = current;
+  else if (fallback && days.includes(fallback)) next = fallback;
+  else next = days[0] || "";
+  if (next) setSelectedDate(trip.id, next);
+  return next;
 }
 
 function closeSheet() {
@@ -139,6 +164,13 @@ function openSheet(title, bodyHtml) {
     <div class="sheet-body">${bodyHtml}</div>
   `;
   sheet.querySelector("[data-close-sheet]").addEventListener("click", closeSheet);
+  sheet.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    window.setTimeout(() => {
+      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }, 80);
+  });
   overlayRoot().append(backdrop, sheet);
   requestAnimationFrame(() => {
     backdrop.classList.add("is-open");
@@ -146,6 +178,43 @@ function openSheet(title, bodyHtml) {
   });
   const first = sheet.querySelector("input, textarea, select");
   if (first) first.focus();
+  return sheet;
+}
+
+function openConfirmSheet({ title, message, confirmLabel = "삭제", onConfirm }) {
+  const sheet = openSheet(title, `
+    <div class="stack-form">
+      <p>${escapeHtml(message)}</p>
+      <div class="two-col">
+        <button type="button" class="ghost-btn" data-sheet-cancel>취소</button>
+        <button type="button" class="ghost-btn danger" data-sheet-confirm>${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>
+  `);
+  sheet.querySelector("[data-sheet-cancel]").addEventListener("click", closeSheet);
+  sheet.querySelector("[data-sheet-confirm]").addEventListener("click", () => {
+    closeSheet();
+    onConfirm?.();
+  });
+  return sheet;
+}
+
+function openPromptSheet({ title, label, value = "", saveLabel = "저장", onSave }) {
+  const sheet = openSheet(title, `
+    <form class="stack-form" data-form="prompt">
+      <label>${escapeHtml(label)}
+        <input type="text" name="value" value="${escapeHtml(value)}" required maxlength="40">
+      </label>
+      <button type="submit" class="primary-btn">${escapeHtml(saveLabel)}</button>
+    </form>
+  `);
+  sheet.querySelector("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const next = String(new FormData(event.target).get("value") || "").trim();
+    if (!next) return;
+    closeSheet();
+    onSave?.(next);
+  });
   return sheet;
 }
 
@@ -330,7 +399,7 @@ function tabbar(trip, tab) {
 function dayChips(trip, selected, hrefBase) {
   const days = daysOf(trip);
   if (!days.length) {
-    return `<div class="empty compact">먼저 정보 탭에서 여행 날짜를 저장하세요.</div>`;
+    return `<div class="empty compact"><span class="empty-icon">🗓️</span>먼저 정보 탭에서 여행 날짜를 저장하세요.</div>`;
   }
   return `
     <div class="chips" role="tablist">
@@ -454,7 +523,6 @@ function placeCard(trip, place, index, total) {
 
 function renderPlan(trip, date) {
   const selected = selectedDateFor(trip, date);
-  selectedDates[trip.id] = selected;
   const places = selected ? placesForDate(trip, selected) : [];
   app.innerHTML = `
     <div class="screen trip-screen">
@@ -503,7 +571,6 @@ function routeStrip(places) {
 
 function renderMapTab(trip, date) {
   const selected = selectedDateFor(trip, date);
-  selectedDates[trip.id] = selected;
   const places = selected ? placesForDate(trip, selected) : [];
   app.innerHTML = `
     <div class="screen map-screen">
@@ -612,13 +679,16 @@ function renderBingoTab(trip) {
       if (lines > prevLines) toast(`🎉 빙고! ${lines}줄 완성`);
     },
     onEditItem: (index) => {
-      const next = window.prompt("빙고 칸 이름", trip.bingo.items[index] || "");
-      if (next == null) return;
-      const label = next.trim();
-      if (!label) return;
-      trip.bingo.items[index] = label;
-      upsertTrip(trip);
-      render();
+      openPromptSheet({
+        title: "빙고 칸 이름",
+        label: "이름",
+        value: trip.bingo.items[index] || "",
+        onSave: (label) => {
+          trip.bingo.items[index] = label;
+          upsertTrip(trip);
+          render();
+        },
+      });
     },
   });
 }
@@ -655,7 +725,23 @@ function renderNew() {
   `;
 }
 
+function splitDateTime(value) {
+  const raw = String(value || "");
+  if (!raw) return { date: "", time: "" };
+  const [date, time = ""] = raw.split("T");
+  return { date, time: time.slice(0, 5) };
+}
+
+function joinDateTime(date, time) {
+  const d = String(date || "").trim();
+  const t = String(time || "").trim();
+  if (!d) return "";
+  return t ? `${d}T${t}` : d;
+}
+
 function flightForm(flight = {}) {
+  const depart = splitDateTime(flight.departAt);
+  const arrive = splitDateTime(flight.arriveAt);
   return `
     <form class="stack-form" data-form="flight">
       <input type="hidden" name="id" value="${flight.id || ""}">
@@ -673,11 +759,17 @@ function flightForm(flight = {}) {
           <input type="text" name="to" value="${escapeHtml(flight.to || "")}" placeholder="KIX">
         </label>
       </div>
+      <label>출발일
+        <input type="date" name="departDate" value="${escapeHtml(depart.date)}">
+      </label>
       <label>출발 시각
-        <input type="datetime-local" name="departAt" value="${escapeHtml(flight.departAt || "")}">
+        <input type="time" name="departTime" value="${escapeHtml(depart.time)}">
+      </label>
+      <label>도착일
+        <input type="date" name="arriveDate" value="${escapeHtml(arrive.date)}">
       </label>
       <label>도착 시각
-        <input type="datetime-local" name="arriveAt" value="${escapeHtml(flight.arriveAt || "")}">
+        <input type="time" name="arriveTime" value="${escapeHtml(arrive.time)}">
       </label>
       <label>예약번호
         <input type="text" name="pnr" value="${escapeHtml(flight.pnr || "")}" placeholder="ABC123">
@@ -735,7 +827,7 @@ function placeForm(place = {}) {
       </label>
       ${Number.isFinite(place.lat) ? `
         <p class="hint">📍 위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>
-        <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener">🧭 구글 지도에서 보기</a>
+        <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener noreferrer">🧭 구글 지도에서 보기</a>
       ` : `<p class="hint">📍 위치는 지도 탭에서 찍거나 구글맵 링크를 붙여 넣을 수 있어요.</p>`}
       <button type="submit" class="primary-btn">저장</button>
     </form>
@@ -810,7 +902,7 @@ function render() {
       toast("여행을 찾을 수 없습니다.");
       return;
     }
-    if (dateParam) selectedDates[trip.id] = dateParam;
+    if (dateParam) setSelectedDate(trip.id, dateParam);
     if (route.tab === "plan") renderPlan(trip, dateParam);
     else if (route.tab === "map") renderMapTab(trip, dateParam);
     else if (route.tab === "bingo") renderBingoTab(trip);
@@ -849,9 +941,14 @@ function onClick(event) {
     return;
   }
   if (action === "delete-trip" && trip) {
-    if (!window.confirm(`“${trip.name}”을 삭제할까요?`)) return;
-    deleteTrip(trip.id);
-    render();
+    openConfirmSheet({
+      title: "여행 삭제",
+      message: `“${trip.name}”을 삭제할까요?`,
+      onConfirm: () => {
+        deleteTrip(trip.id);
+        render();
+      },
+    });
     return;
   }
   if (action === "edit-trip" && trip) {
@@ -960,17 +1057,27 @@ function onClick(event) {
     return;
   }
   if (action === "reset-bingo" && trip) {
-    if (!window.confirm("빙고 체크를 모두 지울까요?")) return;
-    trip.bingo.checked = [];
-    upsertTrip(trip);
-    render();
+    openConfirmSheet({
+      title: "빙고 초기화",
+      message: "빙고 체크를 모두 지울까요?",
+      onConfirm: () => {
+        trip.bingo.checked = [];
+        upsertTrip(trip);
+        render();
+      },
+    });
     return;
   }
   if (action === "reset-all") {
-    if (!window.confirm("브라우저에 저장된 내용을 지우고 샘플로 되돌릴까요?")) return;
-    resetToSeed();
-    go("/");
-    render();
+    openConfirmSheet({
+      title: "샘플로 되돌리기",
+      message: "브라우저에 저장된 내용을 지우고 샘플로 되돌릴까요?",
+      onConfirm: () => {
+        resetToSeed();
+        go("/");
+        render();
+      },
+    });
   }
 }
 
@@ -982,8 +1089,8 @@ function saveFlight(trip, data) {
     flightNo: String(data.get("flightNo") || "").trim(),
     from: String(data.get("from") || "").trim(),
     to: String(data.get("to") || "").trim(),
-    departAt: String(data.get("departAt") || ""),
-    arriveAt: String(data.get("arriveAt") || ""),
+    departAt: joinDateTime(data.get("departDate"), data.get("departTime")),
+    arriveAt: joinDateTime(data.get("arriveDate"), data.get("arriveTime")),
     pnr: String(data.get("pnr") || "").trim(),
     note: String(data.get("note") || "").trim(),
   };

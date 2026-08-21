@@ -99,6 +99,9 @@ p { margin: 0; }
   min-height: 100svh;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   animation: screen-in 220ms ease;
 }
@@ -110,6 +113,19 @@ p { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .screen { animation: none; }
+  .trip-card,
+  .primary-btn,
+  .ghost-btn,
+  .icon-btn,
+  .chip,
+  .place-card,
+  .fab,
+  .tab-item,
+  .bingo-cell,
+  .bingo-cell.is-on {
+    transition: none;
+    animation: none;
+  }
 }
 
 .topbar {
@@ -117,6 +133,7 @@ p { margin: 0; }
   top: 0;
   z-index: 20;
   padding: calc(var(--safe-top) + 6px) 16px 10px;
+  background: var(--chrome);
   background: color-mix(in srgb, var(--chrome) 88%, transparent);
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
@@ -186,6 +203,7 @@ p { margin: 0; }
 
 .content {
   flex: 1;
+  min-width: 0;
   padding: 8px 16px 24px;
 }
 
@@ -198,6 +216,8 @@ p { margin: 0; }
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .trip-card {
@@ -281,6 +301,8 @@ p { margin: 0; }
 .stack-form {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .stack-form label {
@@ -289,12 +311,16 @@ p { margin: 0; }
   font-size: 13px;
   font-weight: 700;
   color: var(--muted);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .stack-form input,
 .stack-form textarea,
 .search-form input {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 44px;
   border: 1px solid var(--line);
   background: var(--field);
@@ -302,12 +328,40 @@ p { margin: 0; }
   padding: 10px 12px;
 }
 
+.stack-form input[type="date"],
+.stack-form input[type="time"],
+.stack-form input[type="datetime-local"] {
+  display: block;
+  overflow: hidden;
+  padding-left: 8px;
+  padding-right: 8px;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.stack-form input[type="date"]::-webkit-datetime-edit,
+.stack-form input[type="time"]::-webkit-datetime-edit,
+.stack-form input[type="datetime-local"]::-webkit-datetime-edit {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.stack-form input[type="date"]::-webkit-calendar-picker-indicator,
+.stack-form input[type="time"]::-webkit-calendar-picker-indicator,
+.stack-form input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
 .stack-form textarea { min-height: 72px; resize: vertical; }
 
 .two-col {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
+  min-width: 0;
 }
 
 .primary-btn {
@@ -500,6 +554,7 @@ p { margin: 0; }
   z-index: 100;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  background: var(--chrome);
   background: color-mix(in srgb, var(--chrome) 90%, transparent);
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
@@ -751,8 +806,13 @@ p { margin: 0; }
   left: 0;
   right: 0;
   bottom: 0;
+  bottom: var(--vv-bottom, 0px);
+  width: 100%;
+  max-width: 100%;
   max-height: 88dvh;
+  max-height: calc(100dvh - var(--vv-bottom, 0px) - 8px);
   overflow: auto;
+  overflow-x: hidden;
   background: var(--paper);
   border-radius: 24px 24px 0 0;
   padding: 8px 16px calc(var(--safe-bottom) + 16px);
