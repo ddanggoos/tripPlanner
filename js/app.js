@@ -167,8 +167,9 @@ function openSheet(title, bodyHtml) {
   sheet.addEventListener("focusin", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.setTimeout(() => {
-      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      target.scrollIntoView({ block: "center", inline: "nearest", behavior: reduce ? "auto" : "smooth" });
     }, 80);
   });
   overlayRoot().append(backdrop, sheet);
