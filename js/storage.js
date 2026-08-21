@@ -50,6 +50,7 @@ function normalizeShop(raw = {}) {
       title: String(item.title || `상품 ${index + 1}`).trim() || `상품 ${index + 1}`,
       price: String(item.price || "").trim(),
       image: looksLikeStoredImage(item.image) ? item.image : "",
+      bought: Boolean(item.bought),
     })),
   };
 }

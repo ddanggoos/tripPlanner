@@ -41,6 +41,12 @@ export function shopEmojiMap(items) {
   return map;
 }
 
+export function shopProgress(trip) {
+  const items = trip.shop?.items || [];
+  const bought = items.filter((item) => item.bought).length;
+  return { bought, total: items.length };
+}
+
 export function looksLikeImageData(value) {
   return typeof value === "string" && value.startsWith("data:image/") && value.length > 32;
 }
@@ -92,14 +98,17 @@ export function compressShopImage(file, { size = 360, quality = 0.74 } = {}) {
 export function renderShop(trip) {
   const items = trip.shop?.items || [];
   const emojis = shopEmojiMap(items);
+  const { bought, total } = shopProgress(trip);
   const tiles = items.length
     ? items.map((item) => {
       const hasImage = looksLikeImageData(item.image);
+      const done = Boolean(item.bought);
       return `
-        <button type="button" class="shop-tile tint-${hasImage ? "photo" : hashId(item.id) % 8}" data-action="open-shop" data-id="${trip.id}" data-item="${item.id}" aria-label="${escapeHtml(item.title)}">
+        <button type="button" class="shop-tile tint-${hasImage ? "photo" : hashId(item.id) % 8} ${done ? "is-bought" : ""}" data-action="open-shop" data-id="${trip.id}" data-item="${item.id}" aria-label="${escapeHtml(item.title)}${done ? ", 구매 완료" : ""}">
           ${hasImage
             ? `<img src="${item.image}" alt="" class="shop-thumb">`
             : `<span class="shop-emoji" aria-hidden="true">${emojis[item.id] || "🛍️"}</span>`}
+          ${done ? `<span class="shop-bought" aria-hidden="true"></span><span class="shop-bought-check" aria-hidden="true">✓</span>` : ""}
           <span class="shop-tile-name">${escapeHtml(item.title)}</span>
         </button>
       `;
@@ -108,7 +117,7 @@ export function renderShop(trip) {
 
   return `
     <section class="shop-wrap">
-      ${items.length ? `<div class="shop-grid">${tiles}</div>` : tiles}
+      ${items.length ? `<p class="shop-status"><strong>${bought}/${total}</strong> 구매 완료</p><div class="shop-grid">${tiles}</div>` : tiles}
     </section>
   `;
 }

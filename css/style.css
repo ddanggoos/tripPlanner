@@ -131,6 +131,7 @@ p { margin: 0; }
   .bingo-cell,
   .bingo-cell.is-on,
   .shop-tile,
+  .shop-bought-check,
   .photo-modal,
   .photo-backdrop {
     transition: none;
@@ -1191,6 +1192,12 @@ a.more-row {
 
 .shop-wrap { padding: 4px 2px 12px; }
 
+.shop-status {
+  margin: 0 4px 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .shop-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1253,6 +1260,40 @@ a.more-row {
 .shop-tile:not(.tint-photo) .shop-tile-name {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.12));
   color: var(--ink);
+}
+
+.shop-bought {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.46);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.shop-bought-check {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.shop-tile.is-bought .shop-tile-name {
+  z-index: 4;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.4));
 }
 
 .shop-preview {
@@ -1325,6 +1366,12 @@ a.more-row {
   font-weight: 700;
 }
 
+.photo-hero-wrap {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
 .photo-hero {
   width: 100%;
   aspect-ratio: 1 / 1;
@@ -1341,6 +1388,12 @@ a.more-row {
   place-items: center;
   font-size: 56px;
   line-height: 1;
+}
+
+.photo-modal > .primary-btn,
+.photo-modal > .ghost-btn:not(.photo-close) {
+  width: 100%;
+  margin-top: 8px;
 }
 
 .photo-modal h2 {
