@@ -1,4 +1,4 @@
-import { fetchMapsApiKey } from "./sync.js";
+import { fetchMapsApiKey } from "./sync.js?v=0.4.4";
 
 const OSM_TILE = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';

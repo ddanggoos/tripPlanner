@@ -89,10 +89,34 @@ export function setState(next) {
 
 export async function initStorage() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  const res = await fetch(SEED_URL, { cache: "no-store" });
-  if (!res.ok) throw new Error("시드 데이터를 불러오지 못했습니다.");
-  seed = normalizeState(await res.json());
-  state = saved ? normalizeState(JSON.parse(saved)) : structuredClone(seed);
+  let parsedSaved = null;
+  try {
+    parsedSaved = saved ? JSON.parse(saved) : null;
+  } catch {
+    parsedSaved = null;
+  }
+
+  const seedPromise = fetch(SEED_URL, { cache: "no-store" })
+    .then((res) => {
+      if (!res.ok) throw new Error("시드 데이터를 불러오지 못했습니다.");
+      return res.json();
+    })
+    .then((raw) => normalizeState(raw));
+
+  try {
+    seed = await Promise.race([
+      seedPromise,
+      new Promise((_, reject) => {
+        window.setTimeout(() => reject(new Error("시드 시간 초과")), 4000);
+      }),
+    ]);
+  } catch (error) {
+    console.warn("seed load failed", error);
+    seed = { trips: [] };
+    seedPromise.then((value) => { seed = value; }).catch(() => {});
+  }
+
+  state = parsedSaved ? normalizeState(parsedSaved) : structuredClone(seed);
   return state;
 }
 

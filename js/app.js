@@ -14,10 +14,10 @@ import {
   reindexPlaces,
   setSyncHooks,
   DEFAULT_BINGO_ITEMS,
-} from "./storage.js";
-import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl } from "./map.js";
-import { renderBingo, bindBingo, completedLines } from "./bingo.js";
-import { APP_VERSION } from "./version.js";
+} from "./storage.js?v=0.4.4";
+import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl } from "./map.js?v=0.4.4";
+import { renderBingo, bindBingo, completedLines } from "./bingo.js?v=0.4.4";
+import { APP_VERSION } from "./version.js?v=0.4.4";
 import {
   initSync,
   isFirebaseConfigured,
@@ -29,7 +29,7 @@ import {
   pushTrip,
   fetchSharedTrip,
   removeSharedTrip,
-} from "./sync.js";
+} from "./sync.js?v=0.4.4";
 
 const app = document.getElementById("app");
 const fileInput = document.getElementById("import-file");
