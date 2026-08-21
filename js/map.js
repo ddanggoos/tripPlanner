@@ -140,20 +140,21 @@ function initLeafletMap(container, { onClick } = {}) {
 
 async function initGoogleMap(container, { onClick } = {}) {
   const { Map } = await google.maps.importLibrary("maps");
-  await google.maps.importLibrary("marker");
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   engine = "google";
   const options = {
     center: SEOUL,
     zoom: 12,
-    mapId: "DEMO_MAP_ID",
     disableDefaultUI: true,
     zoomControl: true,
+    fullscreenControl: false,
+    streetViewControl: false,
+    mapTypeControl: false,
     gestureHandling: "greedy",
     clickableIcons: true,
+    backgroundColor: "#d5d9dd",
   };
-  if (google.maps.ColorScheme) {
-    options.colorScheme = dark ? google.maps.ColorScheme.DARK : google.maps.ColorScheme.LIGHT;
+  if (google.maps.RenderingType?.RASTER) {
+    options.renderingType = google.maps.RenderingType.RASTER;
   }
   googleMap = new Map(container, options);
   googleInfo = new google.maps.InfoWindow();
@@ -173,16 +174,14 @@ async function initGoogleMap(container, { onClick } = {}) {
     const title = await reverseGeocode(lat, lng);
     onClick?.({ title, lat, lng });
   });
-  window.setTimeout(() => google.maps.event.trigger(googleMap, "resize"), 80);
-  window.setTimeout(() => google.maps.event.trigger(googleMap, "resize"), 320);
+  const refresh = () => {
+    if (!googleMap) return;
+    google.maps.event.trigger(googleMap, "resize");
+  };
+  google.maps.event.addListenerOnce(googleMap, "idle", refresh);
+  window.setTimeout(refresh, 80);
+  window.setTimeout(refresh, 400);
   return googleMap;
-}
-
-function numberedPin(n) {
-  const el = document.createElement("div");
-  el.className = "num-marker";
-  el.innerHTML = `<span>${n}</span>`;
-  return el;
 }
 
 export function flyToPlace(place) {
@@ -191,14 +190,15 @@ export function flyToPlace(place) {
     googleMap.panTo({ lat: place.lat, lng: place.lng });
     if ((googleMap.getZoom() || 12) < 15) googleMap.setZoom(16);
     const marker = googleMarkers.find((item) => {
-      const pos = item.position;
+      const pos = item.getPosition?.() || item.position;
+      if (!pos) return false;
       const lat = typeof pos.lat === "function" ? pos.lat() : pos.lat;
       const lng = typeof pos.lng === "function" ? pos.lng() : pos.lng;
       return Math.abs(lat - place.lat) < 1e-6 && Math.abs(lng - place.lng) < 1e-6;
     });
     if (marker && googleInfo) {
       googleInfo.setContent(`<strong>${escapeHtml(place.title || "장소")}</strong>`);
-      googleInfo.open({ map: googleMap, anchor: marker });
+      googleInfo.open(googleMap, marker);
     }
     return;
   }
@@ -308,10 +308,7 @@ export function drawRoute(places) {
 
 async function drawGoogleRoute(places) {
   if (!googleMap) return;
-  const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-  googleMarkers.forEach((marker) => {
-    marker.map = null;
-  });
+  googleMarkers.forEach((marker) => marker.setMap?.(null));
   googleMarkers = [];
   googleLine?.setMap(null);
   googleLine = null;
@@ -319,22 +316,35 @@ async function drawGoogleRoute(places) {
   const points = places
     .filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng))
     .map((place) => ({ lat: place.lat, lng: place.lng }));
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#007aff";
 
   places.forEach((place, index) => {
     if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return;
-    const marker = new AdvancedMarkerElement({
+    const marker = new google.maps.Marker({
       map: googleMap,
       position: { lat: place.lat, lng: place.lng },
       title: place.title || "장소",
-      content: numberedPin(index + 1),
-      gmpClickable: true,
+      label: {
+        text: String(index + 1),
+        color: "#ffffff",
+        fontWeight: "700",
+        fontSize: "12px",
+      },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: accent,
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+        scale: 11,
+      },
     });
     marker.addListener("click", () => {
       googleInfo?.setContent(`
         <strong>${escapeHtml(place.title || "장소")}</strong><br>
         ${place.time ? `${escapeHtml(place.time)} · ` : ""}${index + 1}번째
       `);
-      googleInfo?.open({ map: googleMap, anchor: marker });
+      googleInfo?.open(googleMap, marker);
     });
     googleMarkers.push(marker);
   });
