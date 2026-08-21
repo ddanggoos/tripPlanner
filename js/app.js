@@ -553,7 +553,7 @@ function renderInfo(trip) {
   const datesOpen = foldOpen(trip.id, "dates", !datesSet);
   const flightsOpen = foldOpen(trip.id, "flights", true);
   const hotelsOpen = foldOpen(trip.id, "hotels", true);
-  const moneyOpen = foldOpen(trip.id, "money", !trip.currency || trip.currency === "KRW");
+  const moneyOpen = foldOpen(trip.id, "money", false);
   const people = trip.people?.items || [];
   const peopleOpen = foldOpen(trip.id, "people", !people.length);
   const { done, total } = checklistProgress(trip);
