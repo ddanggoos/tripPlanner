@@ -32,7 +32,7 @@ export function renderBingo(trip, { onToggle, onEditItem } = {}) {
           data-action="bingo-toggle"
           data-index="${index}"
         >
-          <span class="bingo-index">${index + 1}</span>
+          <span class="bingo-index">${on ? "✅" : index + 1}</span>
           <span class="bingo-label">${escapeHtml(label)}</span>
         </button>
       `;
@@ -42,10 +42,10 @@ export function renderBingo(trip, { onToggle, onEditItem } = {}) {
   return `
     <section class="bingo-wrap">
       <div class="bingo-status">
-        <strong>${lines.length}줄</strong> 완성 · 칸을 눌러 체크
+        ${lines.length > 0 ? "🎉 " : ""}<strong>${lines.length}줄</strong> 완성 · 칸을 눌러 체크
       </div>
       <div class="bingo-grid" style="--size:${size}">${cells}</div>
-      <p class="hint">칸을 길게 누르면 이름을 바꿀 수 있어요.</p>
+      <p class="hint">✏️ 칸을 길게 누르면 이름을 바꿀 수 있어요.</p>
     </section>
   `;
 }
