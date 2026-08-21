@@ -1202,6 +1202,136 @@ a.more-row {
   font-size: 14px;
 }
 
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  margin: 0 4px 10px;
+  background: rgba(60, 60, 67, 0.1);
+  border-radius: 12px;
+}
+
+.seg-btn {
+  min-height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.seg-btn.is-active {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.shop-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 4px 8px;
+}
+
+.shop-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 12px;
+  min-width: 0;
+}
+
+.shop-nav-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.danger-text { color: var(--danger); }
+
+.tag-filter {
+  flex-wrap: wrap;
+  overflow: visible;
+  padding-bottom: 10px;
+}
+
+.folder-list { display: grid; gap: 8px; }
+
+.folder-row,
+.person-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.folder-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 48px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.folder-icon { font-size: 22px; line-height: 1; }
+
+.folder-copy,
+.person-row strong {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.folder-copy strong,
+.person-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-row {
+  padding: 10px 8px 10px 14px;
+  margin-bottom: 8px;
+}
+
+.field-block { display: grid; gap: 8px; }
+
+.field-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.choice-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice-chips .chip {
+  box-shadow: none;
+  border: 1px solid var(--line);
+}
+
+.photo-meta {
+  margin: 0 4px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .fx-row {
   display: flex;
   align-items: center;
@@ -1559,6 +1689,7 @@ a.more-row {
   .shop-tile.tint-5 { background: #272a3a; }
   .shop-tile.tint-6 { background: #32263a; }
   .shop-tile.tint-7 { background: #3a2a22; }
+  .seg { background: rgba(235, 235, 245, 0.12); }
 }
 
 .sheet-backdrop {

@@ -1,4 +1,5 @@
 import { getFxView, itemMoneyHtml } from "./money.js";
+import { peopleLabel } from "./people.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -16,6 +17,8 @@ export const SHOP_EMOJIS = [
   "🍇", "🍉", "🍋", "🥑", "🌽", "🍞", "🧁", "🍵", "☕", "🍯",
   "🍒", "🍑", "🥝", "🥖", "🥞", "🥗", "🍲", "🍥", "🍿", "🍭",
 ];
+
+const SHOP_VIEW_KEY = "tripPlanner:shopView";
 
 function hashId(id) {
   let hash = 0;
@@ -97,29 +100,281 @@ export function compressShopImage(file, { size = 360, quality = 0.74 } = {}) {
   });
 }
 
-export function renderShop(trip) {
-  const items = trip.shop?.items || [];
-  const emojis = shopEmojiMap(items);
-  const { bought, total } = shopProgress(trip);
-  const tiles = items.length
-    ? items.map((item) => {
-      const hasImage = looksLikeImageData(item.image);
-      const done = Boolean(item.bought);
-      return `
-        <button type="button" class="shop-tile tint-${hasImage ? "photo" : hashId(item.id) % 8} ${done ? "is-bought" : ""}" data-action="open-shop" data-id="${trip.id}" data-item="${item.id}" aria-label="${escapeHtml(item.title)}${done ? ", 구매 완료" : ""}">
-          ${hasImage
-            ? `<img src="${item.image}" alt="" class="shop-thumb">`
-            : `<span class="shop-emoji" aria-hidden="true">${emojis[item.id] || "🛍️"}</span>`}
-          ${done ? `<span class="shop-bought" aria-hidden="true"></span><span class="shop-bought-check" aria-hidden="true">✓</span>` : ""}
-          <span class="shop-tile-name"><span class="shop-tile-copy">${escapeHtml(item.title)}</span>${item.amount ? `<span class="shop-tile-price">${itemMoneyHtml(item, getFxView(trip.id))}</span>` : ""}</span>
-        </button>
-      `;
-    }).join("")
-    : `<div class="empty compact shop-empty"><span class="empty-icon">🛍️</span>사고 싶은 걸 추가해 보세요.</div>`;
+function loadShopViews() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SHOP_VIEW_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
 
+export function getShopView(tripId) {
+  const raw = loadShopViews()[tripId] || {};
+  const tags = Array.isArray(raw.tags) ? [...new Set(raw.tags.map(String).filter(Boolean))] : [];
+  return {
+    mode: raw.mode === "folders" ? "folders" : "all",
+    folderOpen: Boolean(raw.folderOpen),
+    folderId: String(raw.folderId || ""),
+    tags,
+  };
+}
+
+export function setShopView(tripId, patch) {
+  const all = loadShopViews();
+  const next = { ...getShopView(tripId), ...patch };
+  all[tripId] = next;
+  localStorage.setItem(SHOP_VIEW_KEY, JSON.stringify(all));
+  return next;
+}
+
+export function shopFolderName(trip, folderId) {
+  if (!folderId) return "분류 없음";
+  return (trip.shop?.folders || []).find((folder) => folder.id === folderId)?.name || "분류 없음";
+}
+
+export function itemsInFolder(trip, folderId) {
+  const folders = new Set((trip.shop?.folders || []).map((folder) => folder.id));
+  return (trip.shop?.items || []).filter((item) => {
+    const id = folders.has(item.folderId) ? item.folderId : "";
+    return id === (folderId || "");
+  });
+}
+
+export function visibleShopItems(trip, view = getShopView(trip.id)) {
+  const items = trip.shop?.items || [];
+  const folders = new Set((trip.shop?.folders || []).map((folder) => folder.id));
+  const tags = new Set((trip.shop?.tags || []).map((tag) => tag.id));
+  if (view.mode === "folders") {
+    if (!view.folderOpen) return [];
+    const folderId = folders.has(view.folderId) ? view.folderId : "";
+    return items.filter((item) => (folders.has(item.folderId) ? item.folderId : "") === folderId);
+  }
+  const selected = view.tags.filter((id) => tags.has(id));
+  if (!selected.length) return items;
+  return items.filter((item) => (item.tags || []).some((id) => selected.includes(id)));
+}
+
+export function shopDefaultsFromView(trip) {
+  const view = getShopView(trip.id);
+  const folders = new Set((trip.shop?.folders || []).map((folder) => folder.id));
+  const tags = new Set((trip.shop?.tags || []).map((tag) => tag.id));
+  const defaults = {};
+  if (view.mode === "folders" && view.folderOpen) {
+    defaults.folderId = folders.has(view.folderId) ? view.folderId : "";
+  }
+  if (view.mode === "all") {
+    defaults.tags = view.tags.filter((id) => tags.has(id));
+  }
+  return defaults;
+}
+
+export function folderFieldHtml(trip, folderId = "") {
+  const folders = trip.shop?.folders || [];
+  const valid = folders.some((folder) => folder.id === folderId) ? folderId : "";
+  return `
+    <label>폴더
+      <select name="folderId">
+        <option value="" ${valid === "" ? "selected" : ""}>분류 없음</option>
+        ${folders.map((folder) => `
+          <option value="${escapeHtml(folder.id)}" ${folder.id === valid ? "selected" : ""}>${escapeHtml(folder.name)}</option>
+        `).join("")}
+      </select>
+    </label>
+  `;
+}
+
+export function tagFieldHtml(trip, selected = []) {
+  const tags = trip.shop?.tags || [];
+  if (!tags.length) {
+    return `<p class="hint">태그는 전체 보기에서 추가할 수 있어요.</p>`;
+  }
+  const sel = new Set((Array.isArray(selected) ? selected : []).filter((id) => tags.some((tag) => tag.id === id)));
+  return `
+    <div class="field-block">
+      <span class="field-label">태그</span>
+      <div class="choice-chips" data-tag-chips>
+        ${tags.map((tag) => `
+          <button type="button" class="chip ${sel.has(tag.id) ? "is-active" : ""}" data-tag="${escapeHtml(tag.id)}">${escapeHtml(tag.name)}</button>
+        `).join("")}
+      </div>
+      <input type="hidden" name="tags" value="${escapeHtml([...sel].join(","))}">
+    </div>
+  `;
+}
+
+export function bindTagField(root) {
+  const wrap = root.querySelector("[data-tag-chips]");
+  const hidden = root.querySelector("[name='tags']");
+  if (!wrap || !hidden) return;
+  wrap.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-tag]");
+    if (!btn) return;
+    event.preventDefault();
+    const cur = new Set(hidden.value.split(",").filter(Boolean));
+    const id = btn.dataset.tag;
+    if (cur.has(id)) cur.delete(id);
+    else cur.add(id);
+    hidden.value = [...cur].join(",");
+    wrap.querySelectorAll("[data-tag]").forEach((chip) => {
+      chip.classList.toggle("is-active", cur.has(chip.dataset.tag));
+    });
+  });
+}
+
+export function parseShopFolderField(data, trip) {
+  const folderId = String(data.get("folderId") || "");
+  return (trip.shop?.folders || []).some((folder) => folder.id === folderId) ? folderId : "";
+}
+
+export function parseShopTagField(data, trip) {
+  const allowed = new Set((trip.shop?.tags || []).map((tag) => tag.id));
+  return [...new Set(String(data.get("tags") || "").split(",").map((id) => id.trim()).filter((id) => allowed.has(id)))];
+}
+
+export function shopItemMeta(trip, item) {
+  const bits = [];
+  bits.push(shopFolderName(trip, item.folderId));
+  const tagNames = (item.tags || [])
+    .map((id) => (trip.shop?.tags || []).find((tag) => tag.id === id)?.name)
+    .filter(Boolean)
+    .map((name) => `#${name}`);
+  if (tagNames.length) bits.push(tagNames.join(" "));
+  bits.push(peopleLabel(trip, item.people));
+  return bits.join(" · ");
+}
+
+function shopTilesHtml(trip, items, emptyText) {
+  const emojis = shopEmojiMap(trip.shop?.items || []);
+  if (!items.length) {
+    return `<div class="empty compact shop-empty"><span class="empty-icon">🛍️</span>${emptyText}</div>`;
+  }
+  return `
+    <div class="shop-grid">
+      ${items.map((item) => {
+        const hasImage = looksLikeImageData(item.image);
+        const done = Boolean(item.bought);
+        return `
+          <button type="button" class="shop-tile tint-${hasImage ? "photo" : hashId(item.id) % 8} ${done ? "is-bought" : ""}" data-action="open-shop" data-id="${trip.id}" data-item="${item.id}" aria-label="${escapeHtml(item.title)}${done ? ", 구매 완료" : ""}">
+            ${hasImage
+              ? `<img src="${item.image}" alt="" class="shop-thumb">`
+              : `<span class="shop-emoji" aria-hidden="true">${emojis[item.id] || "🛍️"}</span>`}
+            ${done ? `<span class="shop-bought" aria-hidden="true"></span><span class="shop-bought-check" aria-hidden="true">✓</span>` : ""}
+            <span class="shop-tile-name"><span class="shop-tile-copy">${escapeHtml(item.title)}</span>${item.amount ? `<span class="shop-tile-price">${itemMoneyHtml(item, getFxView(trip.id))}</span>` : ""}</span>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function shopStatusHtml(items) {
+  if (!items.length) return "";
+  const bought = items.filter((item) => item.bought).length;
+  return `<p class="shop-status"><strong>${bought}/${items.length}</strong> 구매 완료</p>`;
+}
+
+function folderListHtml(trip) {
+  const folders = trip.shop?.folders || [];
+  const noneCount = itemsInFolder(trip, "").length;
+  const rows = [
+    `
+      <article class="folder-row">
+        <button type="button" class="folder-main" data-action="shop-open-folder" data-id="${trip.id}" data-folder="">
+          <span class="folder-icon" aria-hidden="true">📂</span>
+          <span class="folder-copy">
+            <strong>분류 없음</strong>
+            <span class="meta">${noneCount}개</span>
+          </span>
+        </button>
+      </article>
+    `,
+    ...folders.map((folder) => {
+      const count = itemsInFolder(trip, folder.id).length;
+      return `
+        <article class="folder-row">
+          <button type="button" class="folder-main" data-action="shop-open-folder" data-id="${trip.id}" data-folder="${escapeHtml(folder.id)}">
+            <span class="folder-icon" aria-hidden="true">📁</span>
+            <span class="folder-copy">
+              <strong>${escapeHtml(folder.name)}</strong>
+              <span class="meta">${count}개</span>
+            </span>
+          </button>
+          <button type="button" class="icon-btn" data-action="rename-shop-folder" data-id="${trip.id}" data-folder="${escapeHtml(folder.id)}" aria-label="이름 바꾸기">이름</button>
+          <button type="button" class="icon-btn danger" data-action="delete-shop-folder" data-id="${trip.id}" data-folder="${escapeHtml(folder.id)}" aria-label="삭제">삭제</button>
+        </article>
+      `;
+    }),
+  ];
+  return `
+    <div class="folder-list">
+      ${rows.join("")}
+    </div>
+  `;
+}
+
+function shopToolbarHtml(trip, view) {
+  const mode = view.mode === "all" ? "all" : "folders";
+  const folders = new Set((trip.shop?.folders || []).map((folder) => folder.id));
+  const folderOpen = mode === "folders" && view.folderOpen;
+  const folderId = folders.has(view.folderId) ? view.folderId : "";
+  const tags = trip.shop?.tags || [];
+  const selected = new Set(view.tags.filter((id) => tags.some((tag) => tag.id === id)));
+  return `
+    <div class="seg" role="tablist" aria-label="쇼핑 보기">
+      <button type="button" class="seg-btn ${mode === "folders" ? "is-active" : ""}" data-action="shop-mode" data-id="${trip.id}" data-mode="folders">폴더로 보기</button>
+      <button type="button" class="seg-btn ${mode === "all" ? "is-active" : ""}" data-action="shop-mode" data-id="${trip.id}" data-mode="all">전체 보기</button>
+    </div>
+    ${mode === "folders" && !folderOpen ? `
+      <div class="shop-tools">
+        <button type="button" class="text-btn" data-action="add-shop-folder" data-id="${trip.id}">폴더 추가</button>
+      </div>
+    ` : ""}
+    ${mode === "folders" && folderOpen ? `
+      <div class="shop-nav">
+        <button type="button" class="text-btn" data-action="shop-close-folder" data-id="${trip.id}">← 폴더</button>
+        <strong class="shop-nav-title">${escapeHtml(shopFolderName(trip, folderId))}</strong>
+        ${folderId ? `
+          <button type="button" class="text-btn" data-action="rename-shop-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">이름</button>
+          <button type="button" class="text-btn danger-text" data-action="delete-shop-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">삭제</button>
+        ` : ""}
+      </div>
+    ` : ""}
+    ${mode === "all" ? `
+      <div class="shop-tools">
+        <button type="button" class="text-btn" data-action="add-shop-tag" data-id="${trip.id}">태그 추가</button>
+        ${tags.length ? `<button type="button" class="text-btn" data-action="manage-shop-tags" data-id="${trip.id}">관리</button>` : ""}
+      </div>
+      <div class="chips tag-filter" role="list">
+        <button type="button" class="chip ${selected.size ? "" : "is-active"}" data-action="shop-clear-tags" data-id="${trip.id}">전체</button>
+        ${tags.map((tag) => `
+          <button type="button" class="chip ${selected.has(tag.id) ? "is-active" : ""}" data-action="shop-filter-tag" data-id="${trip.id}" data-tag="${escapeHtml(tag.id)}">${escapeHtml(tag.name)}</button>
+        `).join("")}
+      </div>
+    ` : ""}
+  `;
+}
+
+export function renderShop(trip) {
+  const view = getShopView(trip.id);
+  const folders = new Set((trip.shop?.folders || []).map((folder) => folder.id));
+  const folderList = view.mode !== "all" && !view.folderOpen;
+  const items = visibleShopItems(trip, view);
+  let body = "";
+  if (folderList) {
+    body = folderListHtml(trip);
+  } else if (view.mode === "folders") {
+    const folderId = folders.has(view.folderId) ? view.folderId : "";
+    body = `${shopStatusHtml(items)}${shopTilesHtml(trip, items, folderId ? "이 폴더가 비어 있어요." : "분류 없는 상품이 없어요.")}`;
+  } else {
+    const filtered = (view.tags || []).length;
+    body = `${shopStatusHtml(items)}${shopTilesHtml(trip, items, filtered ? "이 태그에 맞는 상품이 없어요." : "사고 싶은 걸 추가해 보세요.")}`;
+  }
   return `
     <section class="shop-wrap">
-      ${items.length ? `<p class="shop-status"><strong>${bought}/${total}</strong> 구매 완료</p><div class="shop-grid">${tiles}</div>` : tiles}
+      ${shopToolbarHtml(trip, view)}
+      ${body}
     </section>
   `;
 }

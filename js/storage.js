@@ -1,5 +1,6 @@
 import { withVersion } from "./version.js";
 import { COUNTRIES, normalizeCountry, normalizeCurrency, parseAmount } from "./money.js";
+import { TOGETHER_ID, normalizePeopleIds } from "./people.js";
 
 const STORAGE_KEY = "tripPlanner:data";
 const SEED_URL = withVersion(new URL("../data/trips.json", import.meta.url));
@@ -43,13 +44,38 @@ function normalizeChecklist(raw = {}) {
   };
 }
 
-function normalizeShop(raw = {}, tripCurrency = "KRW") {
+function normalizeNamedList(raw, prefix) {
+  const source = Array.isArray(raw) ? raw : [];
+  const seen = new Set();
+  return source.map((item, index) => ({
+    id: String(item?.id || uid(prefix)),
+    name: String(item?.name || `이름 ${index + 1}`).trim() || `이름 ${index + 1}`,
+  })).filter((item) => {
+    if (!item.id || item.id === TOGETHER_ID || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function normalizePeople(raw = {}) {
+  return { items: normalizeNamedList(raw.items, "ppl") };
+}
+
+function normalizeShop(raw = {}, tripCurrency = "KRW", roster = []) {
   const fallback = normalizeCurrency(tripCurrency);
+  const folders = normalizeNamedList(raw.folders, "sfol");
+  const tags = normalizeNamedList(raw.tags, "stag");
+  const folderIds = new Set(folders.map((folder) => folder.id));
+  const tagIds = new Set(tags.map((tag) => tag.id));
   const source = Array.isArray(raw.items) ? raw.items : [];
   return {
+    folders,
+    tags,
     items: source.map((item, index) => {
       const amount = parseAmount(item.amount ?? item.price);
       const unit = amount ? normalizeCurrency(item.unit || fallback) : "KRW";
+      const folderId = folderIds.has(item.folderId) ? item.folderId : "";
+      const itemTags = [...new Set((Array.isArray(item.tags) ? item.tags : []).map(String).filter((id) => tagIds.has(id)))];
       return {
         id: item.id || uid("shop"),
         title: String(item.title || `상품 ${index + 1}`).trim() || `상품 ${index + 1}`,
@@ -58,12 +84,15 @@ function normalizeShop(raw = {}, tripCurrency = "KRW") {
         rate: unit === "KRW" ? 1 : (Number(item.rate) > 0 ? Number(item.rate) : 0),
         image: looksLikeStoredImage(item.image) ? item.image : "",
         bought: Boolean(item.bought),
+        folderId,
+        tags: itemTags,
+        people: normalizePeopleIds(item.people, roster),
       };
     }),
   };
 }
 
-function normalizeLedger(raw = {}, tripCurrency = "KRW") {
+function normalizeLedger(raw = {}, tripCurrency = "KRW", roster = []) {
   const fallback = normalizeCurrency(tripCurrency);
   const source = Array.isArray(raw.items) ? raw.items : [];
   return {
@@ -77,6 +106,7 @@ function normalizeLedger(raw = {}, tripCurrency = "KRW") {
         unit,
         rate: unit === "KRW" ? 1 : (Number(item.rate) > 0 ? Number(item.rate) : 0),
         note: String(item.note || "").trim(),
+        people: normalizePeopleIds(item.people, roster),
       };
     }),
   };
@@ -154,6 +184,7 @@ function normalizeBingo(raw = {}) {
 function normalizeTrip(trip = {}) {
   const country = normalizeCountry(trip.country, trip.currency);
   const currency = normalizeCurrency(trip.currency || COUNTRIES.find((item) => item.code === country)?.currency);
+  const people = normalizePeople(trip.people);
   return {
     id: trip.id || uid("trip"),
     name: trip.name || "새 여행",
@@ -169,8 +200,9 @@ function normalizeTrip(trip = {}) {
     places: Array.isArray(trip.places) ? trip.places : [],
     bingo: normalizeBingo(trip.bingo),
     checklist: normalizeChecklist(trip.checklist),
-    shop: normalizeShop(trip.shop, currency),
-    ledger: normalizeLedger(trip.ledger, currency),
+    people,
+    shop: normalizeShop(trip.shop, currency, people.items),
+    ledger: normalizeLedger(trip.ledger, currency, people.items),
   };
 }
 

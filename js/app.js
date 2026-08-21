@@ -19,8 +19,24 @@ import {
 import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl, googleMapsHereUrl } from "./map.js";
 import { renderBingo, completedLines, bingoStatus, bingoReady, emptyBingo, BINGO_CELLS } from "./bingo.js";
 import { renderChecklist, checklistProgress } from "./checklist.js";
-import { renderShop, compressShopImage, looksLikeImageData, shopEmojiMap, shopProgress } from "./shop.js";
+import {
+  renderShop,
+  compressShopImage,
+  looksLikeImageData,
+  shopEmojiMap,
+  shopProgress,
+  getShopView,
+  setShopView,
+  shopDefaultsFromView,
+  folderFieldHtml,
+  tagFieldHtml,
+  bindTagField,
+  parseShopFolderField,
+  parseShopTagField,
+  shopItemMeta,
+} from "./shop.js";
 import { renderLedger } from "./ledger.js";
+import { TOGETHER_LABEL, peopleFieldHtml, bindPeopleField, parsePeopleField, prunePersonFromTrip } from "./people.js";
 import {
   bindAmountInput,
   bindCountryCurrency,
@@ -538,6 +554,8 @@ function renderInfo(trip) {
   const flightsOpen = foldOpen(trip.id, "flights", true);
   const hotelsOpen = foldOpen(trip.id, "hotels", true);
   const moneyOpen = foldOpen(trip.id, "money", !trip.currency || trip.currency === "KRW");
+  const people = trip.people?.items || [];
+  const peopleOpen = foldOpen(trip.id, "people", !people.length);
   const { done, total } = checklistProgress(trip);
   app.innerHTML = `
     <div class="screen trip-screen">
@@ -591,6 +609,28 @@ function renderInfo(trip) {
             <p class="hint">${escapeHtml(rateLabel(trip.currency))}</p>
             <button type="submit" class="primary-btn">돈 단위 저장</button>
           </form>
+        </details>
+
+        <details class="group fold-card" data-fold="people" ${peopleOpen ? "open" : ""}>
+          <summary class="fold-summary">
+            <span class="fold-copy">
+              <span class="fold-title">👥 여행자</span>
+              <span class="fold-meta">${people.length ? `${people.length}명` : `${escapeHtml(TOGETHER_LABEL)}만 사용 중`}</span>
+            </span>
+          </summary>
+          <div class="fold-body">
+            <div class="fold-toolbar">
+              <button type="button" class="text-btn" data-action="add-person" data-id="${trip.id}">추가</button>
+            </div>
+            ${people.length ? people.map((person) => `
+              <article class="person-row">
+                <strong>${escapeHtml(person.name)}</strong>
+                <button type="button" class="icon-btn" data-action="rename-person" data-id="${trip.id}" data-item="${person.id}" aria-label="이름 바꾸기">이름</button>
+                <button type="button" class="icon-btn danger" data-action="delete-person" data-id="${trip.id}" data-item="${person.id}" aria-label="삭제">삭제</button>
+              </article>
+            `).join("") : `<div class="empty compact"><span class="empty-icon">👥</span>아직 이름이 없어요. 추가하면 쇼핑·가계부에 붙일 수 있어요.</div>`}
+            <p class="hint">상품과 가계부의 기본값은 ‘${escapeHtml(TOGETHER_LABEL)}’예요. 같이는 여행자 모두를 뜻합니다.</p>
+          </div>
         </details>
 
         <a class="group checklist-entry" href="#/trip/${encodeURIComponent(trip.id)}/checklist">
@@ -946,7 +986,28 @@ function shopPreviewHtml(image) {
   return `<span class="shop-preview-empty">사진 없음 · 이모지로 보여요</span>`;
 }
 
-function openShopForm(trip, item = {}) {
+function openTagManage(trip) {
+  const tags = trip.shop?.tags || [];
+  const sheet = openSheet("태그 관리", `
+    <div class="stack-form">
+      ${tags.length ? tags.map((tag) => `
+        <article class="person-row">
+          <strong>${escapeHtml(tag.name)}</strong>
+          <button type="button" class="icon-btn" data-action="rename-shop-tag" data-id="${trip.id}" data-tag="${escapeHtml(tag.id)}" aria-label="이름 바꾸기">이름</button>
+          <button type="button" class="icon-btn danger" data-action="delete-shop-tag" data-id="${trip.id}" data-tag="${escapeHtml(tag.id)}" aria-label="삭제">삭제</button>
+        </article>
+      `).join("") : `<div class="empty compact"><span class="empty-icon">🏷️</span>태그가 없어요.</div>`}
+    </div>
+  `);
+  sheet.addEventListener("click", (event) => {
+    if (event.target.closest("[data-action]")) onClick(event);
+  });
+}
+
+function openShopForm(trip, item = {}, defaults = {}) {
+  const folderId = item.id ? item.folderId : (defaults.folderId ?? "");
+  const tags = item.id ? (item.tags || []) : (defaults.tags || []);
+  const people = item.people || defaults.people;
   const sheet = openSheet(item.id ? "🛍️ 상품 수정" : "🛍️ 상품 추가", `
     <form class="stack-form" data-form="shop" data-id="${trip.id}">
       <input type="hidden" name="id" value="${item.id || ""}">
@@ -958,6 +1019,9 @@ function openShopForm(trip, item = {}) {
         <input type="text" name="amount" inputmode="decimal" maxlength="16" value="${item.amount ? escapeHtml(String(item.amount)) : ""}" placeholder="숫자만 · 선택">
       </label>
       ${unitFieldHtml(trip, item.unit)}
+      ${folderFieldHtml(trip, folderId)}
+      ${tagFieldHtml(trip, tags)}
+      ${peopleFieldHtml(trip, people)}
       <label>참고 이미지
         <input type="file" accept="image/*" data-shop-file>
       </label>
@@ -972,6 +1036,8 @@ function openShopForm(trip, item = {}) {
     const current = getTrip(trip.id);
     if (current) saveShop(current, new FormData(submitEvent.target));
   });
+  bindTagField(sheet);
+  bindPeopleField(sheet);
   const imageInput = sheet.querySelector("[name='image']");
   const preview = sheet.querySelector("[data-shop-preview]");
   const clearBtn = sheet.querySelector("[data-shop-clear]");
@@ -1020,6 +1086,7 @@ function openShopPhoto(trip, item) {
     </div>
     <h2>${escapeHtml(item.title)}</h2>
     <p class="photo-price ${item.amount ? "" : "is-empty"}">${item.amount ? itemMoneyHtml(item, getFxView(trip.id)) : "가격 미정"}</p>
+    <p class="photo-meta">${escapeHtml(shopItemMeta(trip, item))}</p>
     <button type="button" class="${item.bought ? "ghost-btn" : "primary-btn"}" data-action="toggle-shop-bought" data-id="${trip.id}" data-item="${item.id}">${item.bought ? "구매 완료 취소" : "구매 완료"}</button>
     <div class="card-actions photo-actions">
       <button type="button" class="ghost-btn" data-action="edit-shop" data-id="${trip.id}" data-item="${item.id}">수정</button>
@@ -1630,7 +1697,190 @@ function onClick(event) {
     return;
   }
   if (action === "add-shop" && trip) {
-    openShopForm(trip);
+    openShopForm(trip, {}, shopDefaultsFromView(trip));
+    return;
+  }
+  if (action === "shop-mode" && trip) {
+    setShopView(trip.id, { mode: btn.dataset.mode === "all" ? "all" : "folders" });
+    render();
+    return;
+  }
+  if (action === "shop-open-folder" && trip) {
+    setShopView(trip.id, { mode: "folders", folderOpen: true, folderId: String(btn.dataset.folder || "") });
+    render();
+    return;
+  }
+  if (action === "shop-close-folder" && trip) {
+    setShopView(trip.id, { mode: "folders", folderOpen: false });
+    render();
+    return;
+  }
+  if (action === "shop-filter-tag" && trip) {
+    const view = getShopView(trip.id);
+    const tagId = String(btn.dataset.tag || "");
+    const tags = view.tags.includes(tagId)
+      ? view.tags.filter((id) => id !== tagId)
+      : [...view.tags, tagId];
+    setShopView(trip.id, { mode: "all", tags });
+    render();
+    return;
+  }
+  if (action === "shop-clear-tags" && trip) {
+    setShopView(trip.id, { mode: "all", tags: [] });
+    render();
+    return;
+  }
+  if (action === "add-shop-folder" && trip) {
+    openPromptSheet({
+      title: "폴더 추가",
+      label: "폴더 이름",
+      saveLabel: "추가",
+      maxlength: 20,
+      onSave: (name) => {
+        trip.shop = trip.shop || { folders: [], tags: [], items: [] };
+        trip.shop.folders = trip.shop.folders || [];
+        trip.shop.folders.push({ id: uid("sfol"), name });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "rename-shop-folder" && trip) {
+    const folder = (trip.shop?.folders || []).find((entry) => entry.id === btn.dataset.folder);
+    if (!folder) return;
+    openPromptSheet({
+      title: "폴더 이름",
+      label: "폴더 이름",
+      value: folder.name,
+      maxlength: 20,
+      onSave: (name) => {
+        folder.name = name;
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "delete-shop-folder" && trip) {
+    const folder = (trip.shop?.folders || []).find((entry) => entry.id === btn.dataset.folder);
+    if (!folder) return;
+    openConfirmSheet({
+      title: "폴더 삭제",
+      message: `“${folder.name}” 폴더를 지울까요? 안의 상품은 분류 없음으로 옮겨집니다.`,
+      onConfirm: () => {
+        trip.shop.folders = (trip.shop?.folders || []).filter((entry) => entry.id !== folder.id);
+        (trip.shop?.items || []).forEach((item) => {
+          if (item.folderId === folder.id) item.folderId = "";
+        });
+        const view = getShopView(trip.id);
+        if (view.folderId === folder.id) setShopView(trip.id, { folderOpen: false, folderId: "" });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "add-shop-tag" && trip) {
+    openPromptSheet({
+      title: "태그 추가",
+      label: "태그 이름",
+      saveLabel: "추가",
+      maxlength: 16,
+      onSave: (name) => {
+        trip.shop = trip.shop || { folders: [], tags: [], items: [] };
+        trip.shop.tags = trip.shop.tags || [];
+        const exists = trip.shop.tags.some((tag) => tag.name === name);
+        if (!exists) trip.shop.tags.push({ id: uid("stag"), name });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "manage-shop-tags" && trip) {
+    openTagManage(trip);
+    return;
+  }
+  if (action === "rename-shop-tag" && trip) {
+    const tag = (trip.shop?.tags || []).find((entry) => entry.id === btn.dataset.tag);
+    if (!tag) return;
+    openPromptSheet({
+      title: "태그 이름",
+      label: "태그 이름",
+      value: tag.name,
+      maxlength: 16,
+      onSave: (name) => {
+        tag.name = name;
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "delete-shop-tag" && trip) {
+    const tag = (trip.shop?.tags || []).find((entry) => entry.id === btn.dataset.tag);
+    if (!tag) return;
+    openConfirmSheet({
+      title: "태그 삭제",
+      message: `“${tag.name}” 태그를 지울까요? 상품에서 빠집니다.`,
+      onConfirm: () => {
+        trip.shop.tags = (trip.shop?.tags || []).filter((entry) => entry.id !== tag.id);
+        (trip.shop?.items || []).forEach((item) => {
+          item.tags = (item.tags || []).filter((id) => id !== tag.id);
+        });
+        const view = getShopView(trip.id);
+        setShopView(trip.id, { tags: view.tags.filter((id) => id !== tag.id) });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "add-person" && trip) {
+    openPromptSheet({
+      title: "여행자 추가",
+      label: "이름",
+      saveLabel: "추가",
+      maxlength: 16,
+      onSave: (name) => {
+        trip.people = trip.people || { items: [] };
+        trip.people.items.push({ id: uid("ppl"), name });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "rename-person" && trip) {
+    const person = (trip.people?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (!person) return;
+    openPromptSheet({
+      title: "여행자 이름",
+      label: "이름",
+      value: person.name,
+      maxlength: 16,
+      onSave: (name) => {
+        person.name = name;
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "delete-person" && trip) {
+    const person = (trip.people?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (!person) return;
+    openConfirmSheet({
+      title: "여행자 삭제",
+      message: `“${person.name}”을 지울까요? 상품·가계부에서 빠지고, 아무도 없으면 같이로 바뀝니다.`,
+      onConfirm: () => {
+        trip.people.items = (trip.people?.items || []).filter((entry) => entry.id !== person.id);
+        prunePersonFromTrip(trip, person.id);
+        upsertTrip(trip);
+        render();
+      },
+    });
     return;
   }
   if (action === "open-shop" && trip) {
@@ -1841,8 +2091,12 @@ async function saveShop(trip, data) {
     ...money,
     image: looksLikeImageData(String(data.get("image") || "")) ? String(data.get("image")) : "",
     bought: false,
+    folderId: parseShopFolderField(data, trip),
+    tags: parseShopTagField(data, trip),
+    people: parsePeopleField(data, trip),
   };
-  trip.shop = trip.shop || { items: [] };
+  trip.shop = trip.shop || { folders: [], tags: [], items: [] };
+  trip.shop.items = trip.shop.items || [];
   const index = trip.shop.items.findIndex((item) => item.id === payload.id);
   if (index >= 0) {
     const prev = trip.shop.items[index];
@@ -1868,6 +2122,7 @@ function openLedgerForm(trip, item = {}) {
         <input type="text" name="amount" inputmode="decimal" maxlength="16" value="${item.amount ? escapeHtml(String(item.amount)) : ""}" placeholder="숫자만" required>
       </label>
       ${unitFieldHtml(trip, item.unit)}
+      ${peopleFieldHtml(trip, item.people)}
       <label>메모
         <input type="text" name="note" maxlength="40" value="${escapeHtml(item.note || "")}" placeholder="선택">
       </label>
@@ -1875,6 +2130,7 @@ function openLedgerForm(trip, item = {}) {
     </form>
   `);
   bindAmountInput(sheet.querySelector("[name='amount']"));
+  bindPeopleField(sheet);
   sheet.querySelector("form")?.addEventListener("submit", (submitEvent) => {
     submitEvent.preventDefault();
     const current = getTrip(trip.id);
@@ -1899,6 +2155,7 @@ async function saveLedger(trip, data) {
     title,
     ...money,
     note: String(data.get("note") || "").trim(),
+    people: parsePeopleField(data, trip),
   };
   trip.ledger = trip.ledger || { items: [] };
   const index = trip.ledger.items.findIndex((item) => item.id === payload.id);
