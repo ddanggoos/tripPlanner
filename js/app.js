@@ -1,6 +1,7 @@
 import {
   initStorage,
   getState,
+  setState,
   getTrip,
   upsertTrip,
   deleteTrip,
@@ -13,6 +14,7 @@ import {
   placesForDate,
   reindexPlaces,
   setSyncHooks,
+  wasLoadedFromLocal,
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
 import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl, googleMapsHereUrl } from "./map.js";
@@ -29,6 +31,10 @@ import {
   pushTrip,
   fetchSharedTrip,
   removeSharedTrip,
+  fetchAppState,
+  pushAppState,
+  schedulePushAppState,
+  subscribeAppState,
 } from "./sync.js";
 
 const app = document.getElementById("app");
@@ -199,11 +205,11 @@ function openConfirmSheet({ title, message, confirmLabel = "삭제", onConfirm }
   return sheet;
 }
 
-function openPromptSheet({ title, label, value = "", saveLabel = "저장", onSave }) {
+function openPromptSheet({ title, label, value = "", saveLabel = "저장", maxlength = 40, onSave }) {
   const sheet = openSheet(title, `
     <form class="stack-form" data-form="prompt">
       <label>${escapeHtml(label)}
-        <input type="text" name="value" value="${escapeHtml(value)}" required maxlength="40">
+        <input type="text" name="value" value="${escapeHtml(value)}" required maxlength="${maxlength}">
       </label>
       <button type="submit" class="primary-btn">${escapeHtml(saveLabel)}</button>
     </form>
@@ -225,6 +231,61 @@ function shareStatusText(trip) {
   return "아직 공유하지 않았습니다.";
 }
 
+let cloudLive = false;
+
+function applyCloudState(data) {
+  if (!data || !Array.isArray(data.trips)) return false;
+  setState({ trips: data.trips }, { fromRemote: true });
+  cloudLive = true;
+  return true;
+}
+
+function localStamp() {
+  return Math.max(0, ...getState().trips.map((trip) => Number(trip.updatedAt) || 0));
+}
+
+function shouldUseCloud(remote) {
+  if (!remote || !Array.isArray(remote.trips)) return false;
+  if (!wasLoadedFromLocal()) return true;
+  return (Number(remote.updatedAt) || 0) >= localStamp();
+}
+
+async function waitForSync(ms = 8000) {
+  if (isSyncReady()) return true;
+  if (!isFirebaseConfigured()) return false;
+  const started = Date.now();
+  while (Date.now() - started < ms) {
+    if (isSyncReady()) return true;
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+  }
+  return isSyncReady();
+}
+
+async function hydrateCloud() {
+  try {
+    const remote = await fetchAppState();
+    if (shouldUseCloud(remote)) applyCloudState(remote);
+    else if (wasLoadedFromLocal()) {
+      await pushAppState(getState());
+      cloudLive = true;
+    } else if (remote) {
+      cloudLive = true;
+    }
+  } catch (error) {
+    console.warn("cloud hydrate failed", error);
+    if (isFirebaseConfigured()) {
+      toast("클라우드 목록을 맞추지 못했습니다. Firebase 규칙에 appState를 추가해 주세요.");
+    }
+  }
+}
+
+function watchCloud() {
+  subscribeAppState((data) => {
+    if (!applyCloudState(data)) return;
+    if (!document.querySelector(".sheet.is-open")) render();
+  });
+}
+
 function firebaseHelpHtml() {
   return `
     <div class="help-copy">
@@ -232,7 +293,7 @@ function firebaseHelpHtml() {
       <ol>
         <li>https://console.firebase.google.com 에서 프로젝트 만들기</li>
         <li>Build → Realtime Database → 만들기 (서울 asia-northeast3 권장)</li>
-        <li>규칙은 저장소의 database.rules.json 내용으로 붙여 넣기</li>
+        <li>규칙은 저장소의 database.rules.json 내용으로 붙여 넣기 (appState 포함)</li>
         <li>프로젝트 설정 → 앱 추가(웹) 후 나온 설정을 js/firebase-config.js 에 넣기</li>
         <li>Authentication → Settings → Authorized domains 에 ddanggoos.github.io 추가</li>
         <li>GitHub에 커밋하면 Pages에 올라가고, 그다음부터 링크 공유가 됩니다</li>
@@ -308,7 +369,7 @@ function renderJoin(shareId) {
     </div>
   `;
   (async () => {
-    if (!isSyncReady()) {
+    if (!await waitForSync()) {
       toast("클라우드 연결이 없습니다. Firebase 설정을 먼저 해 주세요.");
       go("/");
       return;
@@ -358,7 +419,7 @@ function renderHome() {
       <header class="topbar">
         <div class="topbar-inner">
           <div>
-            <p class="eyebrow">✈️ Trip Planner</p>
+            <p class="eyebrow">✈️ Trip Planner${cloudLive ? " · ☁️ 실시간" : ""}</p>
             <h1>여행 계획표</h1>
           </div>
           <div class="topbar-actions">${headerActions()}</div>
@@ -367,6 +428,7 @@ function renderHome() {
       <main class="content">
         ${cards}
         <p class="home-footer">
+          ${cloudLive ? `<span class="version-badge">☁️ 클라우드 실시간</span>` : ""}
           <span class="version-badge">🚀 v${APP_VERSION}</span>
           <button type="button" class="text-btn" data-action="reset-all">샘플로 되돌리기</button>
         </p>
@@ -1276,13 +1338,15 @@ syncThemeColor();
 syncViewport();
 
 initStorage()
-  .then(() => {
+  .then(async () => {
     setSyncHooks({
       onSave: (trip) => schedulePush(trip),
       onDelete: (trip) => {
         if (trip?.shareId) removeSharedTrip(trip.shareId);
       },
+      onStateChange: (next) => schedulePushAppState(next),
     });
+    await hydrateCloud();
     render();
     return initSync({
       onRemoteTrip: (remote) => {
@@ -1291,8 +1355,9 @@ initStorage()
       },
     });
   })
-  .then((connected) => {
+  .then(async (connected) => {
     if (connected) {
+      watchCloud();
       getState().trips.forEach((trip) => {
         if (trip.shareId) subscribeTrip(trip.shareId);
       });
