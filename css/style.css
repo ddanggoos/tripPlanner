@@ -110,6 +110,19 @@ p { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .screen { animation: none; }
+  .trip-card,
+  .primary-btn,
+  .ghost-btn,
+  .icon-btn,
+  .chip,
+  .place-card,
+  .fab,
+  .tab-item,
+  .bingo-cell,
+  .bingo-cell.is-on {
+    transition: none;
+    animation: none;
+  }
 }
 
 .topbar {
@@ -117,6 +130,7 @@ p { margin: 0; }
   top: 0;
   z-index: 20;
   padding: calc(var(--safe-top) + 6px) 16px 10px;
+  background: var(--chrome);
   background: color-mix(in srgb, var(--chrome) 88%, transparent);
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
@@ -500,6 +514,7 @@ p { margin: 0; }
   z-index: 100;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  background: var(--chrome);
   background: color-mix(in srgb, var(--chrome) 90%, transparent);
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
