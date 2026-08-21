@@ -21,6 +21,7 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --chrome-bottom: calc(var(--tabbar) + var(--safe-bottom));
+  --route-dock-space: 124px;
   --font: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", sans-serif;
 }
 
@@ -125,6 +126,7 @@ p { margin: 0; }
   .place-card,
   .fab,
   .tab-item,
+  .share-cta,
   .bingo-cell,
   .bingo-cell.is-on {
     transition: none;
@@ -152,7 +154,7 @@ p { margin: 0; }
 
 .topbar-inner {
   display: grid;
-  grid-template-columns: 64px 1fr auto;
+  grid-template-columns: minmax(52px, auto) minmax(0, 1fr) minmax(52px, auto);
   align-items: center;
   min-height: var(--topbar);
   gap: 8px;
@@ -188,7 +190,7 @@ p { margin: 0; }
   text-transform: uppercase;
 }
 
-.back, .text-btn, .ghost-btn, .icon-btn, .primary-btn, .fab, .chip, .tab-item {
+.back, .text-btn, .ghost-btn, .icon-btn, .primary-btn, .fab, .chip, .tab-item, .share-cta, .trip-delete, .place-here, .route-here {
   appearance: none;
   border: 0;
   background: none;
@@ -208,7 +210,7 @@ p { margin: 0; }
 .content {
   flex: 1;
   min-width: 0;
-  padding: 8px 16px 24px;
+  padding: 8px 12px 24px;
 }
 
 .content.has-tabbar,
@@ -226,9 +228,10 @@ p { margin: 0; }
 
 .trip-card {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   overflow: hidden;
   transition: transform 150ms ease, box-shadow 150ms ease;
 }
@@ -250,16 +253,35 @@ p { margin: 0; }
 .trip-card-main {
   flex: 1;
   min-width: 0;
-  padding: 18px 16px 18px 20px;
+  padding: 16px 12px 16px 20px;
   text-decoration: none;
 }
 
-.trip-card h2 { font-size: 20px; margin: 4px 0 6px; }
+.trip-card h2 {
+  font-size: 20px;
+  margin: 4px 0 6px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 
-.trip-card .ghost-btn {
-  border-left: 1px solid var(--line);
-  border-radius: 0;
-  padding: 0 14px;
+.trip-delete {
+  align-self: center;
+  margin: 12px 12px 12px 0;
+  min-height: 40px;
+  min-width: 52px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--field);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.trip-card:has(.trip-delete:active) {
+  transform: none;
 }
 
 .meta { color: var(--muted); font-size: 13px; }
@@ -393,6 +415,8 @@ p { margin: 0; }
 
 .ghost-btn.danger, .icon-btn.danger { color: var(--danger); }
 
+.icon-btn:disabled { opacity: 0.28; }
+
 .hint { color: var(--muted); font-size: 13px; margin-top: 10px; }
 
 .help-copy {
@@ -410,7 +434,61 @@ p { margin: 0; }
   gap: 8px;
 }
 
-.share-status { margin-top: 10px; }
+.share-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--field));
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.share-cta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--field);
+  text-align: left;
+}
+
+.share-cta:active { transform: scale(0.99); }
+
+.share-cta-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--card));
+  font-size: 20px;
+}
+
+.share-cta-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.share-cta-copy strong {
+  font-size: 15px;
+}
+
+.share-cta-copy span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
 
 .ticket-card, .hotel-card {
   padding: 14px;
@@ -428,11 +506,36 @@ p { margin: 0; }
 
 .ticket-arrow { color: var(--accent); }
 
-.row-actions {
+.row-actions,
+.card-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: 4px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.card-actions-spacer { flex: 1; min-width: 4px; }
+
+.card-actions .ghost-btn,
+.card-actions .icon-btn {
+  min-height: 40px;
+  min-width: 40px;
+  border-radius: 12px;
+  background: var(--field);
+  font-size: 13px;
+}
+
+.ticket-card .card-actions .ghost-btn,
+.hotel-card .card-actions .ghost-btn {
+  background: var(--card);
+}
+
+.card-actions .icon-btn.danger {
+  min-width: auto;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 
 .chips {
@@ -468,15 +571,10 @@ p { margin: 0; }
 
 .place-card {
   display: grid;
-  grid-template-columns: 36px 1fr auto;
-  gap: 10px;
-  padding: 12px;
-  margin-bottom: 10px;
-  align-items: center;
-  transition: transform 150ms ease;
+  gap: 0;
+  padding: 14px 14px 12px;
+  margin-bottom: 12px;
 }
-
-.place-card:active { transform: scale(0.988); }
 
 .place-num {
   width: 28px;
@@ -489,11 +587,14 @@ p { margin: 0; }
   font-size: 13px;
   font-weight: 700;
   box-shadow: var(--shadow-accent);
+  flex: 0 0 auto;
 }
 
-.place-body h3 { font-size: 16px; }
 .place-edit {
-  display: block;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
   width: 100%;
   text-align: left;
   background: none;
@@ -501,11 +602,35 @@ p { margin: 0; }
   padding: 0;
   min-height: 44px;
 }
-.place-actions { display: grid; gap: 2px; }
+
+.place-copy {
+  min-width: 0;
+}
+
+.place-copy h3 {
+  font-size: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-card > .note {
+  margin: 8px 0 0 40px;
+}
 
 .place-here {
-  margin-top: 8px;
-  width: fit-content;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--field));
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .place-geo-links {
@@ -667,10 +792,14 @@ p { margin: 0; }
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(var(--chrome-bottom) + 12px + var(--vv-bottom, 0px));
+  bottom: calc(var(--chrome-bottom) + 10px + var(--vv-bottom, 0px));
   z-index: 15;
   display: grid;
-  gap: 8px;
+  gap: 0;
+  padding: 6px 8px 8px;
+  background: var(--card);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
 }
 
 .route-strip {
@@ -679,18 +808,24 @@ p { margin: 0; }
   gap: 2px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 6px 8px;
-  background: var(--card);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
+  padding: 2px 2px 4px;
   scrollbar-width: none;
 }
 
 .route-nav {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
+  padding: 6px 2px 0;
+  border-top: 1px solid var(--line);
+}
+
+.route-nav .chip {
+  box-shadow: none;
+  background: var(--field);
+  min-height: 34px;
+  padding: 6px 12px;
 }
 
 .route-strip::-webkit-scrollbar,
@@ -701,8 +836,8 @@ p { margin: 0; }
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  padding: 6px 4px 6px 8px;
+  min-height: 40px;
+  padding: 4px 2px 4px 6px;
   border: 0;
   background: none;
   white-space: nowrap;
@@ -717,14 +852,12 @@ p { margin: 0; }
 .route-here {
   display: grid;
   place-items: center;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 8px 0 2px;
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
   color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 16px;
   text-decoration: none;
-  white-space: nowrap;
 }
 
 .route-num {
@@ -776,7 +909,7 @@ p { margin: 0; }
 
 .leaflet-bottom,
 .map-canvas .gm-bundled-control {
-  bottom: calc(var(--chrome-bottom) + 44px + var(--vv-bottom, 0px)) !important;
+  bottom: calc(var(--chrome-bottom) + var(--route-dock-space) + var(--vv-bottom, 0px)) !important;
 }
 
 .num-marker span {
@@ -938,5 +1071,13 @@ p { margin: 0; }
 
   .fab {
     left: 50%;
+  }
+
+  .route-dock,
+  .map-hint {
+    left: 50%;
+    right: auto;
+    width: min(696px, calc(100% - 24px));
+    transform: translateX(-50%);
   }
 }

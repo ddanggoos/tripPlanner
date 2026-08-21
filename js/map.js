@@ -352,7 +352,7 @@ export function drawRoute(places) {
   if (points.length === 1) {
     leafletMap.setView(points[0], 15);
   } else if (points.length > 1) {
-    leafletMap.fitBounds(points, { padding: [40, 40], maxZoom: 16 });
+    leafletMap.fitBounds(points, { paddingTopLeft: [48, 80], paddingBottomRight: [48, 170], maxZoom: 16 });
   }
   window.setTimeout(() => leafletMap.invalidateSize(), 60);
 }
@@ -421,7 +421,7 @@ async function drawGoogleRoute(places) {
   } else if (points.length > 1) {
     const bounds = new google.maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
-    googleMap.fitBounds(bounds, { top: 120, right: 40, bottom: 140, left: 40 });
+    googleMap.fitBounds(bounds, { top: 120, right: 40, bottom: 200, left: 40 });
   }
 }
 

@@ -344,11 +344,11 @@ function renderHome() {
     ? trips.map((trip) => `
         <article class="trip-card">
           <a class="trip-card-main" href="#/trip/${encodeURIComponent(trip.id)}">
-            <p class="eyebrow">📍 ${escapeHtml(trip.destination || "목적지 미정")}</p>
+            <p class="eyebrow">📍 ${escapeHtml(trip.destination || "목적지 미정")}${trip.shareId ? " · 💌 공유 중" : ""}</p>
             <h2>${escapeHtml(trip.name)}</h2>
-            <p class="meta">🗓️ ${tripRangeLabel(trip)} · 📍 ${trip.places.length} · ✈️ ${trip.flights.length}${trip.shareId ? " · 💌 공유 중" : ""}</p>
+            <p class="meta">🗓️ ${tripRangeLabel(trip)} · 📍 ${trip.places.length}곳 · ✈️ ${trip.flights.length}</p>
           </a>
-          <button type="button" class="ghost-btn danger" data-action="delete-trip" data-id="${trip.id}">삭제</button>
+          <button type="button" class="trip-delete" data-action="delete-trip" data-id="${trip.id}">삭제</button>
         </article>
       `).join("")
     : `<div class="empty"><span class="empty-icon">🧳</span>아직 여행이 없어요.<br>아래 버튼으로 만들어 보세요.</div>`;
@@ -423,7 +423,7 @@ function renderInfo(trip) {
             <p class="eyebrow">📍 ${escapeHtml(trip.destination || "목적지 미정")}${trip.shareId && isSyncReady() ? " · 💌 실시간" : ""}</p>
             <h1>${escapeHtml(trip.name)}</h1>
           </div>
-          <button type="button" class="text-btn" data-action="share-trip" data-id="${trip.id}">공유</button>
+          <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">이름</button>
         </div>
       </header>
       <main class="content has-tabbar">
@@ -441,14 +441,18 @@ function renderInfo(trip) {
           ${days.length ? `<p class="hint">${days.length}일 일정 · ${formatDateKo(trip.startDate)}부터</p>` : ""}
         </section>
 
-        <section class="group">
+        <section class="group share-group">
           <div class="group-head">
             <h2>💌 함께 보기</h2>
-            <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">이름 수정</button>
+            ${trip.shareId ? `<span class="share-badge">공유 중</span>` : ""}
           </div>
-          <p class="hint">링크를 보내면 두 폰에서 같은 계획이 실시간으로 바뀝니다.</p>
-          <button type="button" class="primary-btn" data-action="share-trip" data-id="${trip.id}">🔗 링크 보내기</button>
-          <p class="meta share-status">${shareStatusText(trip)}</p>
+          <button type="button" class="share-cta" data-action="share-trip" data-id="${trip.id}">
+            <span class="share-cta-icon" aria-hidden="true">🔗</span>
+            <span class="share-cta-copy">
+              <strong>${trip.shareId ? "링크 다시 보내기" : "링크 보내기"}</strong>
+              <span>${shareStatusText(trip)}</span>
+            </span>
+          </button>
         </section>
 
         <section class="group">
@@ -467,7 +471,8 @@ function renderInfo(trip) {
               <p class="meta">${escapeHtml(flight.departAt || "")} → ${escapeHtml(flight.arriveAt || "")}</p>
               ${flight.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(flight.pnr)}</p>` : ""}
               ${flight.note ? `<p class="note">${escapeHtml(flight.note)}</p>` : ""}
-              <div class="row-actions">
+              <div class="card-actions">
+                <span class="card-actions-spacer"></span>
                 <button type="button" class="ghost-btn" data-action="edit-flight" data-id="${trip.id}" data-item="${flight.id}">수정</button>
                 <button type="button" class="ghost-btn danger" data-action="delete-flight" data-id="${trip.id}" data-item="${flight.id}">삭제</button>
               </div>
@@ -487,7 +492,8 @@ function renderInfo(trip) {
               ${hotel.address ? `<p>${escapeHtml(hotel.address)}</p>` : ""}
               ${hotel.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
               ${hotel.note ? `<p class="note">${escapeHtml(hotel.note)}</p>` : ""}
-              <div class="row-actions">
+              <div class="card-actions">
+                <span class="card-actions-spacer"></span>
                 <button type="button" class="ghost-btn" data-action="edit-hotel" data-id="${trip.id}" data-item="${hotel.id}">수정</button>
                 <button type="button" class="ghost-btn danger" data-action="delete-hotel" data-id="${trip.id}" data-item="${hotel.id}">삭제</button>
               </div>
@@ -500,7 +506,7 @@ function renderInfo(trip) {
   `;
 }
 
-function hereNavLink(place, { label = "🧭 길찾기", className = "chip place-here" } = {}) {
+function hereNavLink(place, { label = "🧭 길찾기", className = "place-here" } = {}) {
   const href = googleMapsHereUrl(place);
   if (!href) return "";
   const title = escapeHtml(place.title || "장소");
@@ -511,16 +517,16 @@ function placeCard(trip, place, index, total) {
   const hasGeo = Number.isFinite(place.lat) && Number.isFinite(place.lng);
   return `
     <article class="place-card">
-      <div class="place-num">${index + 1}</div>
-      <div class="place-body">
-        <button type="button" class="place-edit" data-action="edit-place" data-id="${trip.id}" data-item="${place.id}">
+      <button type="button" class="place-edit" data-action="edit-place" data-id="${trip.id}" data-item="${place.id}">
+        <span class="place-num">${index + 1}</span>
+        <span class="place-copy">
           <h3>${escapeHtml(place.title || "장소")}</h3>
-          <p class="meta">${place.time ? escapeHtml(place.time) : "시간 미정"} ${hasGeo ? "· 지도 표시" : "· 위치 없음"}</p>
-        </button>
-        ${place.note ? `<p class="note">${escapeHtml(place.note)}</p>` : ""}
-        ${hereNavLink(place)}
-      </div>
-      <div class="place-actions">
+          <p class="meta">${place.time ? escapeHtml(place.time) : "시간 미정"}${hasGeo ? "" : " · 위치 없음"}</p>
+        </span>
+      </button>
+      ${place.note ? `<p class="note">${escapeHtml(place.note)}</p>` : ""}
+      <div class="card-actions">
+        ${hereNavLink(place) || `<span class="card-actions-spacer"></span>`}
         <button type="button" class="icon-btn" data-action="move-place" data-id="${trip.id}" data-item="${place.id}" data-dir="-1" ${index === 0 ? "disabled" : ""} aria-label="위로">↑</button>
         <button type="button" class="icon-btn" data-action="move-place" data-id="${trip.id}" data-item="${place.id}" data-dir="1" ${index === total - 1 ? "disabled" : ""} aria-label="아래로">↓</button>
         <button type="button" class="icon-btn danger" data-action="delete-place" data-id="${trip.id}" data-item="${place.id}" aria-label="삭제">삭제</button>
@@ -575,7 +581,7 @@ function routeStrip(places) {
               <span class="route-num">${index + 1}</span>
               <span class="route-name">${escapeHtml(place.title || "장소")}</span>
             </button>
-            ${hereNavLink(place, { label: "길찾기", className: "route-here" })}
+            ${hereNavLink(place, { label: "🧭", className: "route-here" })}
           </div>
           ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
         `).join("")}
