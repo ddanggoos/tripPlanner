@@ -19,6 +19,7 @@ import {
 } from "./storage.js";
 import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl, googleMapsHereUrl } from "./map.js";
 import { renderBingo, bindBingo, completedLines } from "./bingo.js";
+import { renderChecklist, checklistProgress } from "./checklist.js";
 import { APP_VERSION } from "./version.js";
 import {
   initSync,
@@ -60,6 +61,38 @@ function setSelectedDate(tripId, date) {
   if (!tripId || !date || selectedDates[tripId] === date) return;
   selectedDates[tripId] = date;
   saveSelectedDates();
+}
+
+const FOLD_KEY = "tripPlanner:folds";
+
+function loadFolds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FOLD_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function foldOpen(tripId, key, fallback) {
+  const stored = loadFolds()[tripId];
+  if (stored && Object.prototype.hasOwnProperty.call(stored, key)) return Boolean(stored[key]);
+  return fallback;
+}
+
+function setFold(tripId, key, open) {
+  const all = loadFolds();
+  all[tripId] = { ...(all[tripId] || {}), [key]: open };
+  localStorage.setItem(FOLD_KEY, JSON.stringify(all));
+}
+
+function bindFolds(tripId) {
+  app.querySelectorAll("details[data-fold]").forEach((el) => {
+    el.addEventListener("toggle", () => {
+      setFold(tripId, el.dataset.fold, el.open);
+    });
+  });
 }
 
 let selectedDates = loadSelectedDates();
@@ -440,16 +473,17 @@ function renderHome() {
 }
 
 function tabbar(trip, tab) {
+  const moreOn = tab === "more" || tab === "bingo" || tab === "checklist";
   const items = [
-    ["info", "정보", "📋", "#/trip/" + trip.id],
-    ["plan", "일정", "🗓️", `#/trip/${trip.id}/plan`],
-    ["map", "지도", "🗺️", `#/trip/${trip.id}/map`],
-    ["bingo", "빙고", "🍽️", `#/trip/${trip.id}/bingo`],
+    ["info", "정보", "📋", "#/trip/" + trip.id, tab === "info"],
+    ["plan", "일정", "🗓️", `#/trip/${trip.id}/plan`, tab === "plan"],
+    ["map", "지도", "🗺️", `#/trip/${trip.id}/map`, tab === "map"],
+    ["more", "더보기", "✨", `#/trip/${trip.id}/more`, moreOn],
   ];
   return `
     <nav class="tabbar" aria-label="여행 메뉴">
-      ${items.map(([id, label, icon, href]) => `
-        <a class="tab-item ${tab === id ? "is-active" : ""}" href="${href}">
+      ${items.map(([, label, icon, href, on]) => `
+        <a class="tab-item ${on ? "is-active" : ""}" href="${href}">
           <span class="tab-icon" aria-hidden="true">${icon}</span>
           ${label}
         </a>
@@ -476,6 +510,11 @@ function dayChips(trip, selected, hrefBase) {
 
 function renderInfo(trip) {
   const days = daysOf(trip);
+  const datesSet = Boolean(days.length);
+  const datesOpen = foldOpen(trip.id, "dates", !datesSet);
+  const flightsOpen = foldOpen(trip.id, "flights", true);
+  const hotelsOpen = foldOpen(trip.id, "hotels", true);
+  const { done, total } = checklistProgress(trip);
   app.innerHTML = `
     <div class="screen trip-screen">
       <header class="topbar">
@@ -489,9 +528,14 @@ function renderInfo(trip) {
         </div>
       </header>
       <main class="content has-tabbar">
-        <section class="group">
-          <h2>🗓️ 여행 기간</h2>
-          <form class="stack-form" data-form="dates" data-id="${trip.id}">
+        <details class="group fold-card" data-fold="dates" ${datesOpen ? "open" : ""}>
+          <summary class="fold-summary">
+            <span class="fold-copy">
+              <span class="fold-title">🗓️ 여행 기간</span>
+              <span class="fold-meta">${datesSet ? `${tripRangeLabel(trip)} · ${days.length}일` : "날짜를 저장하세요"}</span>
+            </span>
+          </summary>
+          <form class="stack-form fold-body" data-form="dates" data-id="${trip.id}">
             <label>시작일
               <input type="date" name="startDate" value="${trip.startDate || ""}" required>
             </label>
@@ -500,8 +544,76 @@ function renderInfo(trip) {
             </label>
             <button type="submit" class="primary-btn">날짜 저장</button>
           </form>
-          ${days.length ? `<p class="hint">${days.length}일 일정 · ${formatDateKo(trip.startDate)}부터</p>` : ""}
-        </section>
+        </details>
+
+        <a class="group checklist-entry" href="#/trip/${encodeURIComponent(trip.id)}/checklist">
+          <span class="checklist-entry-icon" aria-hidden="true">☑️</span>
+          <span class="checklist-entry-copy">
+            <strong>여행 전 체크리스트</strong>
+            <span class="meta">${total ? `${done}/${total} 완료` : "항목을 만들어 보세요"}</span>
+          </span>
+          <span class="checklist-entry-go">열기</span>
+        </a>
+
+        <details class="group fold-card" data-fold="flights" ${flightsOpen ? "open" : ""}>
+          <summary class="fold-summary">
+            <span class="fold-copy">
+              <span class="fold-title">✈️ 항공권</span>
+              <span class="fold-meta">${trip.flights.length ? `${trip.flights.length}장` : "없음"}</span>
+            </span>
+          </summary>
+          <div class="fold-body">
+            <div class="fold-toolbar">
+              <button type="button" class="text-btn" data-action="add-flight" data-id="${trip.id}">추가</button>
+            </div>
+            ${trip.flights.length ? trip.flights.map((flight) => `
+              <article class="ticket-card">
+                <div class="ticket-row">
+                  <strong>${escapeHtml(flight.from || "출발")}</strong>
+                  <span class="ticket-arrow">✈️</span>
+                  <strong>${escapeHtml(flight.to || "도착")}</strong>
+                </div>
+                <p>${escapeHtml(flight.airline || "")} ${escapeHtml(flight.flightNo || "")}</p>
+                <p class="meta">${escapeHtml(flight.departAt || "")} → ${escapeHtml(flight.arriveAt || "")}</p>
+                ${flight.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(flight.pnr)}</p>` : ""}
+                ${flight.note ? `<p class="note">${escapeHtml(flight.note)}</p>` : ""}
+                <div class="card-actions">
+                  <span class="card-actions-spacer"></span>
+                  <button type="button" class="ghost-btn" data-action="edit-flight" data-id="${trip.id}" data-item="${flight.id}">수정</button>
+                  <button type="button" class="ghost-btn danger" data-action="delete-flight" data-id="${trip.id}" data-item="${flight.id}">삭제</button>
+                </div>
+              </article>
+            `).join("") : `<div class="empty compact"><span class="empty-icon">✈️</span>저장한 항공권이 없습니다.</div>`}
+          </div>
+        </details>
+
+        <details class="group fold-card" data-fold="hotels" ${hotelsOpen ? "open" : ""}>
+          <summary class="fold-summary">
+            <span class="fold-copy">
+              <span class="fold-title">🏨 호텔</span>
+              <span class="fold-meta">${trip.hotels.length ? `${trip.hotels.length}곳` : "없음"}</span>
+            </span>
+          </summary>
+          <div class="fold-body">
+            <div class="fold-toolbar">
+              <button type="button" class="text-btn" data-action="add-hotel" data-id="${trip.id}">추가</button>
+            </div>
+            ${trip.hotels.length ? trip.hotels.map((hotel) => `
+              <article class="hotel-card">
+                <h3>${escapeHtml(hotel.name || "호텔")}</h3>
+                <p class="meta">${escapeHtml(hotel.checkIn || "")} ~ ${escapeHtml(hotel.checkOut || "")}</p>
+                ${hotel.address ? `<p>${escapeHtml(hotel.address)}</p>` : ""}
+                ${hotel.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
+                ${hotel.note ? `<p class="note">${escapeHtml(hotel.note)}</p>` : ""}
+                <div class="card-actions">
+                  <span class="card-actions-spacer"></span>
+                  <button type="button" class="ghost-btn" data-action="edit-hotel" data-id="${trip.id}" data-item="${hotel.id}">수정</button>
+                  <button type="button" class="ghost-btn danger" data-action="delete-hotel" data-id="${trip.id}" data-item="${hotel.id}">삭제</button>
+                </div>
+              </article>
+            `).join("") : `<div class="empty compact"><span class="empty-icon">🏨</span>저장한 호텔이 없습니다.</div>`}
+          </div>
+        </details>
 
         <section class="group share-group">
           <div class="group-head">
@@ -516,56 +628,11 @@ function renderInfo(trip) {
             </span>
           </button>
         </section>
-
-        <section class="group">
-          <div class="group-head">
-            <h2>✈️ 항공권</h2>
-            <button type="button" class="text-btn" data-action="add-flight" data-id="${trip.id}">추가</button>
-          </div>
-          ${trip.flights.length ? trip.flights.map((flight) => `
-            <article class="ticket-card">
-              <div class="ticket-row">
-                <strong>${escapeHtml(flight.from || "출발")}</strong>
-                <span class="ticket-arrow">✈️</span>
-                <strong>${escapeHtml(flight.to || "도착")}</strong>
-              </div>
-              <p>${escapeHtml(flight.airline || "")} ${escapeHtml(flight.flightNo || "")}</p>
-              <p class="meta">${escapeHtml(flight.departAt || "")} → ${escapeHtml(flight.arriveAt || "")}</p>
-              ${flight.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(flight.pnr)}</p>` : ""}
-              ${flight.note ? `<p class="note">${escapeHtml(flight.note)}</p>` : ""}
-              <div class="card-actions">
-                <span class="card-actions-spacer"></span>
-                <button type="button" class="ghost-btn" data-action="edit-flight" data-id="${trip.id}" data-item="${flight.id}">수정</button>
-                <button type="button" class="ghost-btn danger" data-action="delete-flight" data-id="${trip.id}" data-item="${flight.id}">삭제</button>
-              </div>
-            </article>
-          `).join("") : `<div class="empty compact"><span class="empty-icon">✈️</span>저장한 항공권이 없습니다.</div>`}
-        </section>
-
-        <section class="group">
-          <div class="group-head">
-            <h2>🏨 호텔</h2>
-            <button type="button" class="text-btn" data-action="add-hotel" data-id="${trip.id}">추가</button>
-          </div>
-          ${trip.hotels.length ? trip.hotels.map((hotel) => `
-            <article class="hotel-card">
-              <h3>${escapeHtml(hotel.name || "호텔")}</h3>
-              <p class="meta">${escapeHtml(hotel.checkIn || "")} ~ ${escapeHtml(hotel.checkOut || "")}</p>
-              ${hotel.address ? `<p>${escapeHtml(hotel.address)}</p>` : ""}
-              ${hotel.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
-              ${hotel.note ? `<p class="note">${escapeHtml(hotel.note)}</p>` : ""}
-              <div class="card-actions">
-                <span class="card-actions-spacer"></span>
-                <button type="button" class="ghost-btn" data-action="edit-hotel" data-id="${trip.id}" data-item="${hotel.id}">수정</button>
-                <button type="button" class="ghost-btn danger" data-action="delete-hotel" data-id="${trip.id}" data-item="${hotel.id}">삭제</button>
-              </div>
-            </article>
-          `).join("") : `<div class="empty compact"><span class="empty-icon">🏨</span>저장한 호텔이 없습니다.</div>`}
-        </section>
       </main>
       ${tabbar(trip, "info")}
     </div>
   `;
+  bindFolds(trip.id);
 }
 
 function hereNavLink(place, { label = "🧭 길찾기", className = "place-here" } = {}) {
@@ -718,13 +785,66 @@ function renderMapTab(trip, date) {
   });
 }
 
+function renderMore(trip) {
+  destroyMap();
+  const { done, total } = checklistProgress(trip);
+  const bingoLines = completedLines(trip.bingo.checked || []).length;
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/">목록</a>
+          <div class="topbar-title"><h1>✨ 더보기</h1></div>
+          <span></span>
+        </div>
+      </header>
+      <main class="content has-tabbar">
+        <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/checklist">
+          <span class="more-icon" aria-hidden="true">☑️</span>
+          <span class="more-copy">
+            <strong>여행 전 체크리스트</strong>
+            <span class="meta">${total ? `${done}/${total} 완료` : "준비 항목을 만들어 보세요"}</span>
+          </span>
+        </a>
+        <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/bingo">
+          <span class="more-icon" aria-hidden="true">🍽️</span>
+          <span class="more-copy">
+            <strong>먹거리 빙고</strong>
+            <span class="meta">${bingoLines}줄 완성</span>
+          </span>
+        </a>
+      </main>
+      ${tabbar(trip, "more")}
+    </div>
+  `;
+}
+
+function renderChecklistTab(trip) {
+  destroyMap();
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          <div class="topbar-title"><h1>☑️ 체크리스트</h1></div>
+          <button type="button" class="text-btn" data-action="add-check" data-id="${trip.id}">추가</button>
+        </div>
+      </header>
+      <main class="content has-tabbar">
+        ${renderChecklist(trip)}
+      </main>
+      ${tabbar(trip, "checklist")}
+    </div>
+  `;
+}
+
 function renderBingoTab(trip) {
   destroyMap();
   app.innerHTML = `
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/">목록</a>
+          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
           <div class="topbar-title"><h1>🍽️ 먹거리 빙고</h1></div>
           <button type="button" class="text-btn" data-action="reset-bingo" data-id="${trip.id}">🔄 초기화</button>
         </div>
@@ -1050,6 +1170,8 @@ function render() {
     if (route.tab === "plan") renderPlan(trip, dateParam);
     else if (route.tab === "map") renderMapTab(trip, dateParam);
     else if (route.tab === "bingo") renderBingoTab(trip);
+    else if (route.tab === "checklist") renderChecklistTab(trip);
+    else if (route.tab === "more") renderMore(trip);
     else renderInfo(trip);
     return;
   }
@@ -1205,6 +1327,68 @@ function onClick(event) {
     render();
     return;
   }
+  if (action === "toggle-check" && trip) {
+    const item = (trip.checklist?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (!item) return;
+    item.done = !item.done;
+    upsertTrip(trip);
+    render();
+    return;
+  }
+  if (action === "add-check" && trip) {
+    openPromptSheet({
+      title: "체크 항목 추가",
+      label: "내용",
+      saveLabel: "추가",
+      maxlength: 40,
+      onSave: (title) => {
+        trip.checklist.items.push({ id: uid("chk"), title, done: false });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "edit-check" && trip) {
+    const item = (trip.checklist?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (!item) return;
+    openPromptSheet({
+      title: "항목 수정",
+      label: "내용",
+      value: item.title,
+      maxlength: 40,
+      onSave: (title) => {
+        item.title = title;
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "delete-check" && trip) {
+    openConfirmSheet({
+      title: "항목 삭제",
+      message: "이 항목을 지울까요?",
+      onConfirm: () => {
+        trip.checklist.items = trip.checklist.items.filter((entry) => entry.id !== btn.dataset.item);
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "move-check" && trip) {
+    const items = trip.checklist?.items || [];
+    const index = items.findIndex((entry) => entry.id === btn.dataset.item);
+    const next = index + Number(btn.dataset.dir);
+    if (index < 0 || next < 0 || next >= items.length) return;
+    const swapItem = items[index];
+    items[index] = items[next];
+    items[next] = swapItem;
+    upsertTrip(trip);
+    render();
+    return;
+  }
   if (action === "reset-bingo" && trip) {
     openConfirmSheet({
       title: "빙고 초기화",
@@ -1304,6 +1488,7 @@ app.addEventListener("submit", (event) => {
     }
     trip.startDate = startDate;
     trip.endDate = endDate;
+    if (startDate && endDate) setFold(trip.id, "dates", false);
     upsertTrip(trip);
     toast("🗓️ 날짜를 저장했습니다.");
     render();

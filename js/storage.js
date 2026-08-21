@@ -3,6 +3,21 @@ import { withVersion } from "./version.js";
 const STORAGE_KEY = "tripPlanner:data";
 const SEED_URL = withVersion(new URL("../data/trips.json", import.meta.url));
 
+export const DEFAULT_CHECKLIST_ITEMS = [
+  "여권·신분증",
+  "항공권 e티켓",
+  "숙소 예약 확인",
+  "비자·입국 서류",
+  "환전·해외결제 카드",
+  "유심·eSIM·로밍",
+  "충전기·보조배터리",
+  "약·상비약",
+  "세면도구",
+  "옷·날씨 대비",
+  "여행자보험",
+  "집 정리(가스·창문)",
+];
+
 export const DEFAULT_BINGO_ITEMS = [
   "현지 아침",
   "길거리 음식",
@@ -38,6 +53,23 @@ export function uid(prefix = "id") {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function normalizeChecklist(raw = {}) {
+  const source = Array.isArray(raw.items) && raw.items.length
+    ? raw.items
+    : DEFAULT_CHECKLIST_ITEMS.map((title, index) => ({
+      id: `chk-${index + 1}`,
+      title,
+      done: false,
+    }));
+  return {
+    items: source.map((item, index) => ({
+      id: item.id || uid("chk"),
+      title: String(item.title || `항목 ${index + 1}`).trim() || `항목 ${index + 1}`,
+      done: Boolean(item.done),
+    })),
+  };
+}
+
 export function normalizeTrip(trip = {}) {
   const bingo = trip.bingo || {};
   const items = Array.isArray(bingo.items) && bingo.items.length === 25
@@ -59,6 +91,7 @@ export function normalizeTrip(trip = {}) {
       items,
       checked: Array.isArray(bingo.checked) ? bingo.checked : [],
     },
+    checklist: normalizeChecklist(trip.checklist),
   };
 }
 
