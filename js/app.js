@@ -19,7 +19,7 @@ import {
 import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl, googleMapsHereUrl } from "./map.js";
 import { renderBingo, completedLines, bingoStatus, bingoReady, emptyBingo, BINGO_CELLS } from "./bingo.js";
 import { renderChecklist, checklistProgress } from "./checklist.js";
-import { renderShop, compressShopImage, looksLikeImageData, shopEmojiMap } from "./shop.js";
+import { renderShop, compressShopImage, looksLikeImageData, shopEmojiMap, shopProgress } from "./shop.js";
 import { APP_VERSION } from "./version.js";
 import {
   initSync,
@@ -790,6 +790,7 @@ function renderMapTab(trip, date) {
 function renderMore(trip) {
   destroyMap();
   const { done, total } = checklistProgress(trip);
+  const shop = shopProgress(trip);
   const bingoLabel = bingoStatus(trip.bingo);
   app.innerHTML = `
     <div class="screen trip-screen">
@@ -812,7 +813,7 @@ function renderMore(trip) {
           <span class="more-icon" aria-hidden="true">🛍️</span>
           <span class="more-copy">
             <strong>쇼핑 리스트</strong>
-            <span class="meta">${(trip.shop?.items || []).length ? `${trip.shop.items.length}개` : "사고 싶은 걸 모아 보세요"}</span>
+            <span class="meta">${shop.total ? `${shop.bought}/${shop.total} 구매 완료` : "사고 싶은 걸 모아 보세요"}</span>
           </span>
         </a>
         <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/bingo">
@@ -935,11 +936,15 @@ function openShopPhoto(trip, item) {
   const hasImage = looksLikeImageData(item.image);
   modal.innerHTML = `
     <button type="button" class="photo-close" data-close-sheet aria-label="닫기">닫기</button>
-    ${hasImage
-      ? `<img class="photo-hero" alt="${escapeHtml(item.title)}" src="${item.image}">`
-      : `<div class="photo-emoji" aria-hidden="true">${emojis[item.id] || "🛍️"}</div>`}
+    <div class="photo-hero-wrap ${item.bought ? "is-bought" : ""}">
+      ${hasImage
+        ? `<img class="photo-hero" alt="${escapeHtml(item.title)}" src="${item.image}">`
+        : `<div class="photo-emoji" aria-hidden="true">${emojis[item.id] || "🛍️"}</div>`}
+      ${item.bought ? `<span class="shop-bought" aria-hidden="true"></span><span class="shop-bought-check" aria-hidden="true">✓</span>` : ""}
+    </div>
     <h2>${escapeHtml(item.title)}</h2>
     <p class="photo-price ${item.price ? "" : "is-empty"}">${item.price ? escapeHtml(item.price) : "가격 미정"}</p>
+    <button type="button" class="${item.bought ? "ghost-btn" : "primary-btn"}" data-action="toggle-shop-bought" data-id="${trip.id}" data-item="${item.id}">${item.bought ? "구매 완료 취소" : "구매 완료"}</button>
     <div class="card-actions photo-actions">
       <button type="button" class="ghost-btn" data-action="edit-shop" data-id="${trip.id}" data-item="${item.id}">수정</button>
       <button type="button" class="ghost-btn danger" data-action="delete-shop" data-id="${trip.id}" data-item="${item.id}">삭제</button>
@@ -1526,6 +1531,16 @@ function onClick(event) {
     if (item) openShopPhoto(trip, item);
     return;
   }
+  if (action === "toggle-shop-bought" && trip) {
+    const item = (trip.shop?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (!item) return;
+    item.bought = !item.bought;
+    upsertTrip(trip);
+    toast(item.bought ? "✅ 구매 완료" : "구매 완료를 취소했습니다.");
+    closeSheet();
+    render();
+    return;
+  }
   if (action === "edit-shop" && trip) {
     const item = (trip.shop?.items || []).find((entry) => entry.id === btn.dataset.item);
     if (item) openShopForm(trip, item);
@@ -1683,11 +1698,14 @@ function saveShop(trip, data) {
     title,
     price: String(data.get("price") || "").trim(),
     image: looksLikeImageData(String(data.get("image") || "")) ? String(data.get("image")) : "",
+    bought: false,
   };
   trip.shop = trip.shop || { items: [] };
   const index = trip.shop.items.findIndex((item) => item.id === payload.id);
-  if (index >= 0) trip.shop.items[index] = payload;
-  else trip.shop.items.push(payload);
+  if (index >= 0) {
+    payload.bought = Boolean(trip.shop.items[index].bought);
+    trip.shop.items[index] = payload;
+  } else trip.shop.items.push(payload);
   upsertTrip(trip);
   closeSheet();
   render();
