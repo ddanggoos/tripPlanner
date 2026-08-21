@@ -62,6 +62,14 @@ python3 -m http.server 4173
 
 그다음 휴대폰과 같은 네트워크면 `http://<컴퓨터IP>:4173` 으로 아이폰 사파리에서 확인하면 됩니다.
 
+## 앱 버전
+
+화면에 보이는 버전과 Pages 배포 시 CSS/JS 캐시 쿼리(`?v=`)는 [`js/version.js`](js/version.js)의 `APP_VERSION` 하나입니다.
+브라우저의 `import "./map.js"`는 함수로 주소를 만들 수 없어서, `main` 배포 워크플로가 그 값을 파일에 붙여 줍니다.
+버전을 올릴 때는 **이 파일만** 고치면 됩니다. 로컬 `python3 -m http.server`에서는 쿼리 없이 그대로 동작합니다.
+
+런타임으로 불러오는 주소(시드 JSON 등)는 `withVersion()`을 쓰면 같은 버전이 붙습니다.
+
 ## GitHub Pages
 
 배포 주소: https://ddanggoos.github.io/tripPlanner/
