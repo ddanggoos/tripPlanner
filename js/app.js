@@ -20,7 +20,7 @@ import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace,
 import { renderBingo, completedLines, bingoStatus, bingoReady, emptyBingo, BINGO_CELLS } from "./bingo.js";
 import { renderChecklist, checklistProgress } from "./checklist.js";
 import { renderShop, compressShopImage, looksLikeImageData, shopEmojiMap, shopProgress } from "./shop.js";
-import { renderLedger, ledgerTotal } from "./ledger.js";
+import { renderLedger } from "./ledger.js";
 import {
   bindAmountInput,
   bindCountryCurrency,
@@ -31,13 +31,15 @@ import {
   ensureRates,
   fxBarHtml,
   getFxView,
-  getRates,
-  moneyPairHtml,
+  itemMoneyHtml,
   normalizeCountry,
   normalizeCurrency,
   parseAmount,
   rateLabel,
   setFxView,
+  snapshotRate,
+  totalsMoneyHtml,
+  unitFieldHtml,
 } from "./money.js";
 import { APP_VERSION } from "./version.js";
 import {
@@ -864,7 +866,7 @@ function renderMore(trip) {
           <span class="more-icon" aria-hidden="true">📒</span>
           <span class="more-copy">
             <strong>가계부</strong>
-            <span class="meta">${ledgerTotal(trip) ? moneyPairHtml(ledgerTotal(trip), trip.currency, getFxView(trip.id), getRates()) : "쓴 돈을 모아 보세요"}</span>
+            <span class="meta">${(trip.ledger?.items || []).length ? totalsMoneyHtml(trip.ledger.items, trip.currency, getFxView(trip.id)) : "쓴 돈을 모아 보세요"}</span>
           </span>
         </a>
         <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/bingo">
@@ -952,9 +954,10 @@ function openShopForm(trip, item = {}) {
       <label>상품명
         <input type="text" name="title" required maxlength="40" value="${escapeHtml(item.title || "")}" placeholder="예: 키링">
       </label>
-      <label>가격 (${escapeHtml(currencyOf(trip.currency).name)})
+      <label>가격
         <input type="text" name="amount" inputmode="decimal" maxlength="16" value="${item.amount ? escapeHtml(String(item.amount)) : ""}" placeholder="숫자만 · 선택">
       </label>
+      ${unitFieldHtml(trip, item.unit)}
       <label>참고 이미지
         <input type="file" accept="image/*" data-shop-file>
       </label>
@@ -1016,7 +1019,7 @@ function openShopPhoto(trip, item) {
       ${item.bought ? `<span class="shop-bought" aria-hidden="true"></span><span class="shop-bought-check" aria-hidden="true">✓</span>` : ""}
     </div>
     <h2>${escapeHtml(item.title)}</h2>
-    <p class="photo-price ${item.amount ? "" : "is-empty"}">${item.amount ? moneyPairHtml(item.amount, trip.currency, getFxView(trip.id), getRates()) : "가격 미정"}</p>
+    <p class="photo-price ${item.amount ? "" : "is-empty"}">${item.amount ? itemMoneyHtml(item, getFxView(trip.id)) : "가격 미정"}</p>
     <button type="button" class="${item.bought ? "ghost-btn" : "primary-btn"}" data-action="toggle-shop-bought" data-id="${trip.id}" data-item="${item.id}">${item.bought ? "구매 완료 취소" : "구매 완료"}</button>
     <div class="card-actions photo-actions">
       <button type="button" class="ghost-btn" data-action="edit-shop" data-id="${trip.id}" data-item="${item.id}">수정</button>
@@ -1622,7 +1625,7 @@ function onClick(event) {
     return;
   }
   if (action === "fx-view" && trip) {
-    setFxView(trip.id, btn.dataset.view);
+    setFxView(trip.id, getFxView(trip.id) === "krw" ? "local" : "krw");
     render();
     return;
   }
@@ -1812,23 +1815,41 @@ function saveFlight(trip, data) {
   render();
 }
 
-function saveShop(trip, data) {
+async function moneyFields(trip, data) {
+  try { await ensureRates(); } catch { /* 저장된 환율 또는 기본값 */ }
+  const amount = parseAmount(data.get("amount"));
+  const local = normalizeCurrency(trip.currency);
+  const picked = String(data.get("unit") || "");
+  const unit = !amount ? "KRW" : (picked === "KRW" || local === "KRW" ? "KRW" : local);
+  return {
+    amount,
+    unit,
+    rate: amount ? snapshotRate(unit) : 1,
+  };
+}
+
+async function saveShop(trip, data) {
   const title = String(data.get("title") || "").trim();
   if (!title) {
     toast("상품명을 적어 주세요.");
     return;
   }
+  const money = await moneyFields(trip, data);
   const payload = {
     id: String(data.get("id") || "") || uid("shop"),
     title,
-    amount: parseAmount(data.get("amount")),
+    ...money,
     image: looksLikeImageData(String(data.get("image") || "")) ? String(data.get("image")) : "",
     bought: false,
   };
   trip.shop = trip.shop || { items: [] };
   const index = trip.shop.items.findIndex((item) => item.id === payload.id);
   if (index >= 0) {
-    payload.bought = Boolean(trip.shop.items[index].bought);
+    const prev = trip.shop.items[index];
+    payload.bought = Boolean(prev.bought);
+    if (prev.unit === payload.unit && prev.amount === payload.amount && Number(prev.rate) > 0) {
+      payload.rate = prev.rate;
+    }
     trip.shop.items[index] = payload;
   } else trip.shop.items.push(payload);
   upsertTrip(trip);
@@ -1837,16 +1858,16 @@ function saveShop(trip, data) {
 }
 
 function openLedgerForm(trip, item = {}) {
-  const unit = currencyOf(trip.currency).name;
   const sheet = openSheet(item.id ? "📒 항목 수정" : "📒 항목 추가", `
     <form class="stack-form" data-form="ledger" data-id="${trip.id}">
       <input type="hidden" name="id" value="${item.id || ""}">
       <label>내용
         <input type="text" name="title" required maxlength="40" value="${escapeHtml(item.title || "")}" placeholder="예: 편의점">
       </label>
-      <label>금액 (${escapeHtml(unit)})
+      <label>금액
         <input type="text" name="amount" inputmode="decimal" maxlength="16" value="${item.amount ? escapeHtml(String(item.amount)) : ""}" placeholder="숫자만" required>
       </label>
+      ${unitFieldHtml(trip, item.unit)}
       <label>메모
         <input type="text" name="note" maxlength="40" value="${escapeHtml(item.note || "")}" placeholder="선택">
       </label>
@@ -1862,27 +1883,32 @@ function openLedgerForm(trip, item = {}) {
   sheet.querySelector("[name='title']")?.focus();
 }
 
-function saveLedger(trip, data) {
+async function saveLedger(trip, data) {
   const title = String(data.get("title") || "").trim();
-  const amount = parseAmount(data.get("amount"));
   if (!title) {
     toast("내용을 적어 주세요.");
     return;
   }
-  if (!amount) {
+  const money = await moneyFields(trip, data);
+  if (!money.amount) {
     toast("금액을 숫자로 적어 주세요.");
     return;
   }
   const payload = {
     id: String(data.get("id") || "") || uid("led"),
     title,
-    amount,
+    ...money,
     note: String(data.get("note") || "").trim(),
   };
   trip.ledger = trip.ledger || { items: [] };
   const index = trip.ledger.items.findIndex((item) => item.id === payload.id);
-  if (index >= 0) trip.ledger.items[index] = payload;
-  else trip.ledger.items.push(payload);
+  if (index >= 0) {
+    const prev = trip.ledger.items[index];
+    if (prev.unit === payload.unit && prev.amount === payload.amount && Number(prev.rate) > 0) {
+      payload.rate = prev.rate;
+    }
+    trip.ledger.items[index] = payload;
+  } else trip.ledger.items.push(payload);
   upsertTrip(trip);
   closeSheet();
   render();

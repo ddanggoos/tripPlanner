@@ -1,4 +1,4 @@
-import { formatMoney, getFxView, getRates, moneyPairHtml, normalizeCurrency, parseAmount } from "./money.js";
+import { getFxView, itemMoneyHtml, parseAmount, totalsMoneyHtml } from "./money.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -14,10 +14,7 @@ export function ledgerTotal(trip) {
 
 export function renderLedger(trip) {
   const items = trip.ledger?.items || [];
-  const currency = normalizeCurrency(trip.currency);
   const view = getFxView(trip.id);
-  const rates = getRates();
-  const total = ledgerTotal(trip);
   const rows = items.length
     ? items.map((item) => `
         <article class="ledger-item">
@@ -25,7 +22,7 @@ export function renderLedger(trip) {
             <strong>${escapeHtml(item.title)}</strong>
             ${item.note ? `<span class="meta">${escapeHtml(item.note)}</span>` : ""}
           </button>
-          <div class="ledger-amt">${moneyPairHtml(item.amount, currency, view, rates) || `<span class="money-pair"><strong class="money-main is-empty">-</strong></span>`}</div>
+          <div class="ledger-amt">${itemMoneyHtml(item, view) || `<span class="money-pair"><strong class="money-main is-empty">-</strong></span>`}</div>
           <button type="button" class="icon-btn danger" data-action="delete-ledger" data-id="${trip.id}" data-item="${item.id}" aria-label="삭제">삭제</button>
         </article>
       `).join("")
@@ -33,7 +30,7 @@ export function renderLedger(trip) {
 
   return `
     <section class="ledger-wrap">
-      <p class="ledger-status">합계 ${moneyPairHtml(total, currency, view, rates) || formatMoney(0, view === "krw" ? "KRW" : currency)}</p>
+      <p class="ledger-status">합계 ${totalsMoneyHtml(items, trip.currency, view)}</p>
       ${rows}
     </section>
   `;
