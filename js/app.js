@@ -16,6 +16,7 @@ import {
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
 import { initMap, drawRoute, destroyMap, searchPlaces, flyToPlace, googleMapsUrl } from "./map.js";
+import { renderBingo, bindBingo, completedLines } from "./bingo.js";
 import { APP_VERSION } from "./version.js";
 import {
   initSync,
@@ -191,7 +192,7 @@ async function copyText(text) {
 
 async function shareTrip(trip) {
   if (!isFirebaseConfigured() || !isSyncReady()) {
-    openSheet("실시간 공유 설정", firebaseHelpHtml());
+    openSheet("💌 실시간 공유 설정", firebaseHelpHtml());
     return;
   }
   if (!trip.shareId) trip.shareId = makeShareId();
@@ -202,13 +203,13 @@ async function shareTrip(trip) {
   if (navigator.share) {
     try {
       await navigator.share({ title: shared.name, text: "여행 계획표", url });
-      toast("링크를 보냈습니다.");
+      toast("🔗 링크를 보냈습니다.");
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
     }
   }
-  openSheet("공유 링크", `
+  openSheet("🔗 공유 링크", `
     <div class="stack-form">
       <p class="hint">이 링크를 여자친구에게 보내 주세요. 같은 페이지에서 바로 반영됩니다.</p>
       <input type="text" readonly value="${escapeHtml(url)}">
@@ -217,7 +218,7 @@ async function shareTrip(trip) {
   `);
   document.querySelector("[data-copy-share]")?.addEventListener("click", async () => {
     const ok = await copyText(url);
-    toast(ok ? "링크를 복사했습니다." : "복사에 실패했습니다.");
+    toast(ok ? "📋 링크를 복사했습니다." : "복사에 실패했습니다.");
   });
 }
 
@@ -274,21 +275,21 @@ function renderHome() {
     ? trips.map((trip) => `
         <article class="trip-card">
           <a class="trip-card-main" href="#/trip/${encodeURIComponent(trip.id)}">
-            <p class="eyebrow">${escapeHtml(trip.destination || "목적지 미정")}</p>
+            <p class="eyebrow">📍 ${escapeHtml(trip.destination || "목적지 미정")}</p>
             <h2>${escapeHtml(trip.name)}</h2>
-            <p class="meta">${tripRangeLabel(trip)} · 장소 ${trip.places.length} · 항공 ${trip.flights.length}${trip.shareId ? " · 공유 중" : ""}</p>
+            <p class="meta">🗓️ ${tripRangeLabel(trip)} · 📍 ${trip.places.length} · ✈️ ${trip.flights.length}${trip.shareId ? " · 💌 공유 중" : ""}</p>
           </a>
           <button type="button" class="ghost-btn danger" data-action="delete-trip" data-id="${trip.id}">삭제</button>
         </article>
       `).join("")
-    : `<div class="empty">아직 여행이 없어요.<br>아래 버튼으로 만들어 보세요.</div>`;
+    : `<div class="empty"><span class="empty-icon">🧳</span>아직 여행이 없어요.<br>아래 버튼으로 만들어 보세요.</div>`;
 
   app.innerHTML = `
     <div class="screen home-screen">
       <header class="topbar">
         <div class="topbar-inner">
           <div>
-            <p class="eyebrow">Trip Planner</p>
+            <p class="eyebrow">✈️ Trip Planner</p>
             <h1>여행 계획표</h1>
           </div>
           <div class="topbar-actions">${headerActions()}</div>
@@ -297,28 +298,28 @@ function renderHome() {
       <main class="content">
         ${cards}
         <p class="home-footer">
-          <span class="version-badge">v${APP_VERSION}</span>
+          <span class="version-badge">🚀 v${APP_VERSION}</span>
           <button type="button" class="text-btn" data-action="reset-all">샘플로 되돌리기</button>
         </p>
       </main>
       <div class="fab-space"></div>
-      <button type="button" class="fab" data-action="new-trip">새 여행</button>
+      <button type="button" class="fab" data-action="new-trip">✨ 새 여행</button>
     </div>
   `;
 }
 
 function tabbar(trip, tab) {
   const items = [
-    ["info", "정보", "#/trip/" + trip.id],
-    ["plan", "일정", `#/trip/${trip.id}/plan`],
-    ["map", "지도", `#/trip/${trip.id}/map`],
-    ["bingo", "빙고", `#/trip/${trip.id}/bingo`],
+    ["info", "정보", "📋", "#/trip/" + trip.id],
+    ["plan", "일정", "🗓️", `#/trip/${trip.id}/plan`],
+    ["map", "지도", "🗺️", `#/trip/${trip.id}/map`],
+    ["bingo", "빙고", "🍽️", `#/trip/${trip.id}/bingo`],
   ];
   return `
     <nav class="tabbar" aria-label="여행 메뉴">
-      ${items.map(([id, label, href]) => `
+      ${items.map(([id, label, icon, href]) => `
         <a class="tab-item ${tab === id ? "is-active" : ""}" href="${href}">
-          <span class="tab-icon" data-tab="${id}"></span>
+          <span class="tab-icon" aria-hidden="true">${icon}</span>
           ${label}
         </a>
       `).join("")}
@@ -350,7 +351,7 @@ function renderInfo(trip) {
         <div class="topbar-inner">
           <a class="back" href="#/">목록</a>
           <div class="topbar-title">
-            <p class="eyebrow">${escapeHtml(trip.destination || "목적지 미정")}${trip.shareId && isSyncReady() ? " · 실시간" : ""}</p>
+            <p class="eyebrow">📍 ${escapeHtml(trip.destination || "목적지 미정")}${trip.shareId && isSyncReady() ? " · 💌 실시간" : ""}</p>
             <h1>${escapeHtml(trip.name)}</h1>
           </div>
           <button type="button" class="text-btn" data-action="share-trip" data-id="${trip.id}">공유</button>
@@ -358,7 +359,7 @@ function renderInfo(trip) {
       </header>
       <main class="content has-tabbar">
         <section class="group">
-          <h2>여행 기간</h2>
+          <h2>🗓️ 여행 기간</h2>
           <form class="stack-form" data-form="dates" data-id="${trip.id}">
             <label>시작일
               <input type="date" name="startDate" value="${trip.startDate || ""}" required>
@@ -373,41 +374,41 @@ function renderInfo(trip) {
 
         <section class="group">
           <div class="group-head">
-            <h2>함께 보기</h2>
+            <h2>💌 함께 보기</h2>
             <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">이름 수정</button>
           </div>
           <p class="hint">링크를 보내면 두 폰에서 같은 계획이 실시간으로 바뀝니다.</p>
-          <button type="button" class="primary-btn" data-action="share-trip" data-id="${trip.id}">링크 보내기</button>
+          <button type="button" class="primary-btn" data-action="share-trip" data-id="${trip.id}">🔗 링크 보내기</button>
           <p class="meta share-status">${shareStatusText(trip)}</p>
         </section>
 
         <section class="group">
           <div class="group-head">
-            <h2>항공권</h2>
+            <h2>✈️ 항공권</h2>
             <button type="button" class="text-btn" data-action="add-flight" data-id="${trip.id}">추가</button>
           </div>
           ${trip.flights.length ? trip.flights.map((flight) => `
             <article class="ticket-card">
               <div class="ticket-row">
                 <strong>${escapeHtml(flight.from || "출발")}</strong>
-                <span class="ticket-arrow">→</span>
+                <span class="ticket-arrow">✈️</span>
                 <strong>${escapeHtml(flight.to || "도착")}</strong>
               </div>
               <p>${escapeHtml(flight.airline || "")} ${escapeHtml(flight.flightNo || "")}</p>
               <p class="meta">${escapeHtml(flight.departAt || "")} → ${escapeHtml(flight.arriveAt || "")}</p>
-              ${flight.pnr ? `<p class="meta">예약 ${escapeHtml(flight.pnr)}</p>` : ""}
+              ${flight.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(flight.pnr)}</p>` : ""}
               ${flight.note ? `<p class="note">${escapeHtml(flight.note)}</p>` : ""}
               <div class="row-actions">
                 <button type="button" class="ghost-btn" data-action="edit-flight" data-id="${trip.id}" data-item="${flight.id}">수정</button>
                 <button type="button" class="ghost-btn danger" data-action="delete-flight" data-id="${trip.id}" data-item="${flight.id}">삭제</button>
               </div>
             </article>
-          `).join("") : `<div class="empty compact">저장한 항공권이 없습니다.</div>`}
+          `).join("") : `<div class="empty compact"><span class="empty-icon">✈️</span>저장한 항공권이 없습니다.</div>`}
         </section>
 
         <section class="group">
           <div class="group-head">
-            <h2>호텔</h2>
+            <h2>🏨 호텔</h2>
             <button type="button" class="text-btn" data-action="add-hotel" data-id="${trip.id}">추가</button>
           </div>
           ${trip.hotels.length ? trip.hotels.map((hotel) => `
@@ -415,14 +416,14 @@ function renderInfo(trip) {
               <h3>${escapeHtml(hotel.name || "호텔")}</h3>
               <p class="meta">${escapeHtml(hotel.checkIn || "")} ~ ${escapeHtml(hotel.checkOut || "")}</p>
               ${hotel.address ? `<p>${escapeHtml(hotel.address)}</p>` : ""}
-              ${hotel.pnr ? `<p class="meta">예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
+              ${hotel.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
               ${hotel.note ? `<p class="note">${escapeHtml(hotel.note)}</p>` : ""}
               <div class="row-actions">
                 <button type="button" class="ghost-btn" data-action="edit-hotel" data-id="${trip.id}" data-item="${hotel.id}">수정</button>
                 <button type="button" class="ghost-btn danger" data-action="delete-hotel" data-id="${trip.id}" data-item="${hotel.id}">삭제</button>
               </div>
             </article>
-          `).join("") : `<div class="empty compact">저장한 호텔이 없습니다.</div>`}
+          `).join("") : `<div class="empty compact"><span class="empty-icon">🏨</span>저장한 호텔이 없습니다.</div>`}
         </section>
       </main>
       ${tabbar(trip, "info")}
@@ -460,7 +461,7 @@ function renderPlan(trip, date) {
       <header class="topbar">
         <div class="topbar-inner">
           <a class="back" href="#/">목록</a>
-          <div class="topbar-title"><h1>일정</h1></div>
+          <div class="topbar-title"><h1>🗓️ 일정</h1></div>
           <button type="button" class="text-btn" data-action="add-place" data-id="${trip.id}" ${selected ? "" : "disabled"}>추가</button>
         </div>
       </header>
@@ -468,7 +469,7 @@ function renderPlan(trip, date) {
         ${dayChips(trip, selected, `#/trip/${trip.id}/plan`)}
         ${selected ? (places.length
           ? places.map((place, index) => placeCard(trip, place, index, places.length)).join("")
-          : `<div class="empty compact">이 날 장소가 없습니다. 추가하거나 지도에서 찍어 보세요.</div>`) : ""}
+          : `<div class="empty compact"><span class="empty-icon">📍</span>이 날 장소가 없습니다. 추가하거나 지도에서 찍어 보세요.</div>`) : ""}
       </main>
       ${tabbar(trip, "plan")}
     </div>
@@ -478,7 +479,7 @@ function renderPlan(trip, date) {
 function routeStrip(places) {
   const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
   if (!pinned.length) {
-    return `<p class="map-hint">지도를 누르거나 구글맵 링크를 붙여 장소를 추가하세요.</p>`;
+    return `<p class="map-hint">📍 지도를 누르거나 구글맵 링크를 붙여 장소를 추가하세요.</p>`;
   }
   return `
     <div class="route-strip" role="list">
@@ -509,13 +510,13 @@ function renderMapTab(trip, date) {
       <header class="topbar overlay">
         <div class="topbar-inner">
           <a class="back" href="#/">목록</a>
-          <div class="topbar-title"><h1>지도</h1></div>
+          <div class="topbar-title"><h1>🗺️ 지도</h1></div>
           <span></span>
         </div>
         <div class="map-tools">
           ${dayChips(trip, selected, `#/trip/${trip.id}/map`)}
           <form class="search-form" data-form="search">
-            <input type="search" name="q" placeholder="장소 이름 또는 구글맵 링크" enterkeyhint="search" autocomplete="off">
+            <input type="search" name="q" placeholder="🔍 장소 이름 또는 구글맵 링크" enterkeyhint="search" autocomplete="off">
           </form>
           <div class="search-results" hidden></div>
         </div>
@@ -538,7 +539,7 @@ function renderMapTab(trip, date) {
   } else {
     destroyMap();
     mapEl.classList.add("is-empty");
-    mapEl.innerHTML = `<div class="empty">날짜를 먼저 저장하세요.</div>`;
+    mapEl.innerHTML = `<div class="empty"><span class="empty-icon">🗓️</span>날짜를 먼저 저장하세요.</div>`;
   }
 
   const form = app.querySelector("[data-form='search']");
@@ -557,7 +558,7 @@ function renderMapTab(trip, date) {
         resultsEl.hidden = !results.length;
         resultsEl.innerHTML = results.map((item, index) => `
           <button type="button" class="search-item" data-search-index="${index}">
-            <strong>${escapeHtml(item.title)}</strong>
+            <strong>📍 ${escapeHtml(item.title)}</strong>
             <span>${escapeHtml(item.label)}</span>
           </button>
         `).join("");
@@ -588,8 +589,8 @@ function renderBingoTab(trip) {
       <header class="topbar">
         <div class="topbar-inner">
           <a class="back" href="#/">목록</a>
-          <div class="topbar-title"><h1>먹거리 빙고</h1></div>
-          <button type="button" class="text-btn" data-action="reset-bingo" data-id="${trip.id}">초기화</button>
+          <div class="topbar-title"><h1>🍽️ 먹거리 빙고</h1></div>
+          <button type="button" class="text-btn" data-action="reset-bingo" data-id="${trip.id}">🔄 초기화</button>
         </div>
       </header>
       <main class="content has-tabbar bingo-content">
@@ -608,7 +609,7 @@ function renderBingoTab(trip) {
       upsertTrip(trip);
       const lines = completedLines(trip.bingo.checked).length;
       render();
-      if (lines > prevLines) toast(`빙고! ${lines}줄 완성`);
+      if (lines > prevLines) toast(`🎉 빙고! ${lines}줄 완성`);
     },
     onEditItem: (index) => {
       const next = window.prompt("빙고 칸 이름", trip.bingo.items[index] || "");
@@ -629,7 +630,7 @@ function renderNew() {
       <header class="topbar">
         <div class="topbar-inner">
           <a class="back" href="#/">취소</a>
-          <div class="topbar-title"><h1>새 여행</h1></div>
+          <div class="topbar-title"><h1>🧳 새 여행</h1></div>
           <span></span>
         </div>
       </header>
@@ -647,7 +648,7 @@ function renderNew() {
           <label>종료일
             <input type="date" name="endDate">
           </label>
-          <button type="submit" class="primary-btn">만들기</button>
+          <button type="submit" class="primary-btn">🎉 만들기</button>
         </form>
       </main>
     </div>
@@ -733,16 +734,16 @@ function placeForm(place = {}) {
         <textarea name="note" rows="2">${escapeHtml(place.note || "")}</textarea>
       </label>
       ${Number.isFinite(place.lat) ? `
-        <p class="hint">위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>
-        <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener">구글 지도에서 보기</a>
-      ` : `<p class="hint">위치는 지도 탭에서 찍거나 구글맵 링크를 붙여 넣을 수 있어요.</p>`}
+        <p class="hint">📍 위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>
+        <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener">🧭 구글 지도에서 보기</a>
+      ` : `<p class="hint">📍 위치는 지도 탭에서 찍거나 구글맵 링크를 붙여 넣을 수 있어요.</p>`}
       <button type="submit" class="primary-btn">저장</button>
     </form>
   `;
 }
 
 function openPlaceSheet(trip, defaults) {
-  const sheet = openSheet(defaults.id ? "장소 수정" : "장소 추가", placeForm(defaults));
+  const sheet = openSheet(defaults.id ? "📍 장소 수정" : "📍 장소 추가", placeForm(defaults));
   sheet.querySelector("form").addEventListener("submit", (event) => {
     event.preventDefault();
     savePlace(trip, new FormData(event.target));
@@ -832,7 +833,7 @@ function onClick(event) {
 
   if (action === "export") {
     exportJson();
-    toast("trips.json을 저장했습니다.");
+    toast("💾 trips.json을 저장했습니다.");
     return;
   }
   if (action === "import") {
@@ -854,7 +855,7 @@ function onClick(event) {
     return;
   }
   if (action === "edit-trip" && trip) {
-    const sheet = openSheet("여행 수정", `
+    const sheet = openSheet("✏️ 여행 수정", `
       <form class="stack-form" data-form="edit-trip">
         <label>여행 이름
           <input type="text" name="name" value="${escapeHtml(trip.name)}" required>
@@ -877,7 +878,7 @@ function onClick(event) {
     return;
   }
   if (action === "add-flight" && trip) {
-    const sheet = openSheet("항공권 추가", flightForm());
+    const sheet = openSheet("✈️ 항공권 추가", flightForm());
     sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
       submitEvent.preventDefault();
       saveFlight(trip, new FormData(submitEvent.target));
@@ -886,7 +887,7 @@ function onClick(event) {
   }
   if (action === "edit-flight" && trip) {
     const flight = trip.flights.find((item) => item.id === btn.dataset.item);
-    const sheet = openSheet("항공권 수정", flightForm(flight));
+    const sheet = openSheet("✈️ 항공권 수정", flightForm(flight));
     sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
       submitEvent.preventDefault();
       saveFlight(trip, new FormData(submitEvent.target));
@@ -900,7 +901,7 @@ function onClick(event) {
     return;
   }
   if (action === "add-hotel" && trip) {
-    const sheet = openSheet("호텔 추가", hotelForm({
+    const sheet = openSheet("🏨 호텔 추가", hotelForm({
       checkIn: trip.startDate,
       checkOut: trip.endDate,
     }));
@@ -912,7 +913,7 @@ function onClick(event) {
   }
   if (action === "edit-hotel" && trip) {
     const hotel = trip.hotels.find((item) => item.id === btn.dataset.item);
-    const sheet = openSheet("호텔 수정", hotelForm(hotel));
+    const sheet = openSheet("🏨 호텔 수정", hotelForm(hotel));
     sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
       submitEvent.preventDefault();
       saveHotel(trip, new FormData(submitEvent.target));
@@ -1048,7 +1049,7 @@ app.addEventListener("submit", (event) => {
     trip.startDate = startDate;
     trip.endDate = endDate;
     upsertTrip(trip);
-    toast("날짜를 저장했습니다.");
+    toast("🗓️ 날짜를 저장했습니다.");
     render();
     return;
   }
@@ -1065,7 +1066,7 @@ fileInput?.addEventListener("change", async () => {
   if (!file) return;
   try {
     importJson(await file.text());
-    toast("JSON을 가져왔습니다.");
+    toast("📥 JSON을 가져왔습니다.");
     render();
   } catch (error) {
     toast(error.message || "가져오기에 실패했습니다.");
