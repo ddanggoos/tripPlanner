@@ -848,7 +848,6 @@ a.more-row {
   left: 0;
   right: 0;
   bottom: 0;
-  bottom: var(--vv-bottom, 0px);
   z-index: 100;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
