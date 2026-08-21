@@ -1,5 +1,5 @@
 import { getFxView, itemMoneyHtml } from "./money.js";
-import { peopleLabel } from "./people.js";
+import { TOGETHER_ID, itemMatchesPeopleFilter, peopleFilterHtml, peopleLabel } from "./people.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -110,6 +110,11 @@ function loadShopViews() {
   }
 }
 
+function readPeopleFilter(raw) {
+  const people = Array.isArray(raw) ? [...new Set(raw.map(String).filter(Boolean))] : [];
+  return people.length ? people : [TOGETHER_ID];
+}
+
 export function getShopView(tripId) {
   const raw = loadShopViews()[tripId] || {};
   const tags = Array.isArray(raw.tags) ? [...new Set(raw.tags.map(String).filter(Boolean))] : [];
@@ -118,6 +123,7 @@ export function getShopView(tripId) {
     folderOpen: Boolean(raw.folderOpen),
     folderId: String(raw.folderId || ""),
     tags,
+    people: readPeopleFilter(raw.people),
   };
 }
 
@@ -152,8 +158,10 @@ export function visibleShopItems(trip, view = getShopView(trip.id)) {
     return items.filter((item) => (folders.has(item.folderId) ? item.folderId : "") === folderId);
   }
   const selected = view.tags.filter((id) => tags.has(id));
-  if (!selected.length) return items;
-  return items.filter((item) => (item.tags || []).some((id) => selected.includes(id)));
+  const tagged = selected.length
+    ? items.filter((item) => (item.tags || []).some((id) => selected.includes(id)))
+    : items;
+  return tagged.filter((item) => itemMatchesPeopleFilter(item, view.people, trip.people?.items || []));
 }
 
 export function shopDefaultsFromView(trip) {
@@ -187,9 +195,6 @@ export function folderFieldHtml(trip, folderId = "") {
 
 export function tagFieldHtml(trip, selected = []) {
   const tags = trip.shop?.tags || [];
-  if (!tags.length) {
-    return `<p class="hint">태그는 전체 보기에서 추가할 수 있어요.</p>`;
-  }
   const sel = new Set((Array.isArray(selected) ? selected : []).filter((id) => tags.some((tag) => tag.id === id)));
   return `
     <div class="field-block">
@@ -199,28 +204,105 @@ export function tagFieldHtml(trip, selected = []) {
           <button type="button" class="chip ${sel.has(tag.id) ? "is-active" : ""}" data-tag="${escapeHtml(tag.id)}">${escapeHtml(tag.name)}</button>
         `).join("")}
       </div>
+      <div class="tag-add-row">
+        <input type="text" data-new-tag-input maxlength="16" placeholder="새 태그 · 여러 개 가능">
+        <button type="button" class="text-btn" data-add-tag>추가</button>
+      </div>
       <input type="hidden" name="tags" value="${escapeHtml([...sel].join(","))}">
+      <input type="hidden" name="newTags" value="">
     </div>
   `;
 }
 
-export function bindTagField(root) {
+function readCsv(input) {
+  return String(input?.value || "").split(",").map((value) => value.trim()).filter(Boolean);
+}
+
+function writeCsv(input, values) {
+  if (input) input.value = [...new Set(values)].join(",");
+}
+
+export function bindTagField(root, trip) {
   const wrap = root.querySelector("[data-tag-chips]");
   const hidden = root.querySelector("[name='tags']");
+  const newHidden = root.querySelector("[name='newTags']");
+  const input = root.querySelector("[data-new-tag-input]");
   if (!wrap || !hidden) return;
-  wrap.addEventListener("click", (event) => {
-    const btn = event.target.closest("[data-tag]");
-    if (!btn) return;
-    event.preventDefault();
-    const cur = new Set(hidden.value.split(",").filter(Boolean));
-    const id = btn.dataset.tag;
-    if (cur.has(id)) cur.delete(id);
-    else cur.add(id);
-    hidden.value = [...cur].join(",");
+  const existing = new Map((trip.shop?.tags || []).map((tag) => [tag.name, tag.id]));
+
+  const syncExisting = () => {
+    const cur = new Set(readCsv(hidden));
     wrap.querySelectorAll("[data-tag]").forEach((chip) => {
       chip.classList.toggle("is-active", cur.has(chip.dataset.tag));
     });
+  };
+
+  wrap.addEventListener("click", (event) => {
+    const existingBtn = event.target.closest("[data-tag]");
+    const newBtn = event.target.closest("[data-new-tag]");
+    if (existingBtn) {
+      event.preventDefault();
+      const cur = new Set(readCsv(hidden));
+      const id = existingBtn.dataset.tag;
+      if (cur.has(id)) cur.delete(id);
+      else cur.add(id);
+      writeCsv(hidden, [...cur]);
+      syncExisting();
+      return;
+    }
+    if (newBtn) {
+      event.preventDefault();
+      const name = newBtn.dataset.newTag;
+      writeCsv(newHidden, readCsv(newHidden).filter((value) => value !== name));
+      newBtn.remove();
+    }
   });
+
+  const addName = (raw) => {
+    const name = String(raw || "").trim();
+    if (!name) return;
+    const existingId = existing.get(name);
+    if (existingId) {
+      writeCsv(hidden, [...readCsv(hidden), existingId]);
+      syncExisting();
+      return;
+    }
+    if (readCsv(newHidden).includes(name)) return;
+    writeCsv(newHidden, [...readCsv(newHidden), name]);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip is-active";
+    chip.dataset.newTag = name;
+    chip.textContent = name;
+    wrap.append(chip);
+  };
+
+  const addFromInput = () => {
+    addName(input?.value);
+    if (input) input.value = "";
+  };
+
+  root.querySelector("[data-add-tag]")?.addEventListener("click", addFromInput);
+  input?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addFromInput();
+  });
+}
+
+export function takeShopTagsFromForm(trip, data, makeId) {
+  trip.shop = trip.shop || { folders: [], tags: [], items: [] };
+  trip.shop.tags = trip.shop.tags || [];
+  const created = [];
+  String(data.get("newTags") || "").split(",").map((value) => value.trim()).filter(Boolean).forEach((name) => {
+    let tag = trip.shop.tags.find((entry) => entry.name === name);
+    if (!tag) {
+      tag = { id: makeId("stag"), name };
+      trip.shop.tags.push(tag);
+    }
+    created.push(tag.id);
+  });
+  return [...new Set([...parseShopTagField(data, trip), ...created])];
 }
 
 export function parseShopFolderField(data, trip) {
@@ -342,16 +424,18 @@ function shopToolbarHtml(trip, view) {
       </div>
     ` : ""}
     ${mode === "all" ? `
-      <div class="shop-tools">
+      <div class="filter-head">
+        <p class="filter-label">태그</p>
         <button type="button" class="text-btn" data-action="add-shop-tag" data-id="${trip.id}">태그 추가</button>
         ${tags.length ? `<button type="button" class="text-btn" data-action="manage-shop-tags" data-id="${trip.id}">관리</button>` : ""}
       </div>
-      <div class="chips tag-filter" role="list">
+      <div class="chips tag-filter" role="list" aria-label="태그">
         <button type="button" class="chip ${selected.size ? "" : "is-active"}" data-action="shop-clear-tags" data-id="${trip.id}">전체</button>
         ${tags.map((tag) => `
           <button type="button" class="chip ${selected.has(tag.id) ? "is-active" : ""}" data-action="shop-filter-tag" data-id="${trip.id}" data-tag="${escapeHtml(tag.id)}">${escapeHtml(tag.name)}</button>
         `).join("")}
       </div>
+      ${peopleFilterHtml(trip, view.people, "shop-filter-person")}
     ` : ""}
   `;
 }
@@ -368,8 +452,9 @@ export function renderShop(trip) {
     const folderId = folders.has(view.folderId) ? view.folderId : "";
     body = `${shopStatusHtml(items)}${shopTilesHtml(trip, items, folderId ? "이 폴더가 비어 있어요." : "분류 없는 상품이 없어요.")}`;
   } else {
-    const filtered = (view.tags || []).length;
-    body = `${shopStatusHtml(items)}${shopTilesHtml(trip, items, filtered ? "이 태그에 맞는 상품이 없어요." : "사고 싶은 걸 추가해 보세요.")}`;
+    const peopleFiltered = (view.people || []).some((id) => id !== TOGETHER_ID);
+    const filtered = Boolean((view.tags || []).length || peopleFiltered);
+    body = `${shopStatusHtml(items)}${shopTilesHtml(trip, items, filtered ? "조건에 맞는 상품이 없어요." : "사고 싶은 걸 추가해 보세요.")}`;
   }
   return `
     <section class="shop-wrap">
