@@ -1,4 +1,5 @@
 import { withVersion } from "./version.js";
+import { COUNTRIES, normalizeCountry, normalizeCurrency, parseAmount } from "./money.js";
 
 const STORAGE_KEY = "tripPlanner:data";
 const SEED_URL = withVersion(new URL("../data/trips.json", import.meta.url));
@@ -48,9 +49,21 @@ function normalizeShop(raw = {}) {
     items: source.map((item, index) => ({
       id: item.id || uid("shop"),
       title: String(item.title || `상품 ${index + 1}`).trim() || `상품 ${index + 1}`,
-      price: String(item.price || "").trim(),
+      amount: parseAmount(item.amount ?? item.price),
       image: looksLikeStoredImage(item.image) ? item.image : "",
       bought: Boolean(item.bought),
+    })),
+  };
+}
+
+function normalizeLedger(raw = {}) {
+  const source = Array.isArray(raw.items) ? raw.items : [];
+  return {
+    items: source.map((item, index) => ({
+      id: item.id || uid("led"),
+      title: String(item.title || `항목 ${index + 1}`).trim() || `항목 ${index + 1}`,
+      amount: parseAmount(item.amount),
+      note: String(item.note || "").trim(),
     })),
   };
 }
@@ -125,10 +138,14 @@ function normalizeBingo(raw = {}) {
 }
 
 function normalizeTrip(trip = {}) {
+  const country = normalizeCountry(trip.country, trip.currency);
+  const currency = normalizeCurrency(trip.currency || COUNTRIES.find((item) => item.code === country)?.currency);
   return {
     id: trip.id || uid("trip"),
     name: trip.name || "새 여행",
     destination: trip.destination || "",
+    country,
+    currency,
     startDate: trip.startDate || "",
     endDate: trip.endDate || "",
     shareId: trip.shareId || "",
@@ -139,6 +156,7 @@ function normalizeTrip(trip = {}) {
     bingo: normalizeBingo(trip.bingo),
     checklist: normalizeChecklist(trip.checklist),
     shop: normalizeShop(trip.shop),
+    ledger: normalizeLedger(trip.ledger),
   };
 }
 

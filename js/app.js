@@ -20,6 +20,25 @@ import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace,
 import { renderBingo, completedLines, bingoStatus, bingoReady, emptyBingo, BINGO_CELLS } from "./bingo.js";
 import { renderChecklist, checklistProgress } from "./checklist.js";
 import { renderShop, compressShopImage, looksLikeImageData, shopEmojiMap, shopProgress } from "./shop.js";
+import { renderLedger, ledgerTotal } from "./ledger.js";
+import {
+  bindAmountInput,
+  bindCountryCurrency,
+  countryOf,
+  countryOptions,
+  currencyOf,
+  currencyOptions,
+  ensureRates,
+  fxBarHtml,
+  getFxView,
+  getRates,
+  moneyPairHtml,
+  normalizeCountry,
+  normalizeCurrency,
+  parseAmount,
+  rateLabel,
+  setFxView,
+} from "./money.js";
 import { APP_VERSION } from "./version.js";
 import {
   initSync,
@@ -440,7 +459,7 @@ function renderHome() {
     ? trips.map((trip) => `
         <article class="trip-card">
           <a class="trip-card-main" href="#/trip/${encodeURIComponent(trip.id)}">
-            <p class="eyebrow">📍 ${escapeHtml(trip.destination || "목적지 미정")}${trip.shareId ? " · 💌 공유 중" : ""}</p>
+            <p class="eyebrow">📍 ${escapeHtml(trip.destination || countryOf(trip.country)?.name || "목적지 미정")}${trip.shareId ? " · 💌 공유 중" : ""}</p>
             <h2>${escapeHtml(trip.name)}</h2>
             <p class="meta">🗓️ ${tripRangeLabel(trip)} · 📍 ${trip.places.length}곳 · ✈️ ${trip.flights.length}</p>
           </a>
@@ -475,7 +494,7 @@ function renderHome() {
 }
 
 function tabbar(trip, tab) {
-  const moreOn = tab === "more" || tab === "bingo" || tab === "checklist" || tab === "shop";
+  const moreOn = tab === "more" || tab === "bingo" || tab === "checklist" || tab === "shop" || tab === "ledger";
   const items = [
     ["info", "정보", "📋", "#/trip/" + trip.id, tab === "info"],
     ["plan", "일정", "🗓️", `#/trip/${trip.id}/plan`, tab === "plan"],
@@ -516,6 +535,7 @@ function renderInfo(trip) {
   const datesOpen = foldOpen(trip.id, "dates", !datesSet);
   const flightsOpen = foldOpen(trip.id, "flights", true);
   const hotelsOpen = foldOpen(trip.id, "hotels", true);
+  const moneyOpen = foldOpen(trip.id, "money", !trip.currency || trip.currency === "KRW");
   const { done, total } = checklistProgress(trip);
   app.innerHTML = `
     <div class="screen trip-screen">
@@ -523,7 +543,7 @@ function renderInfo(trip) {
         <div class="topbar-inner">
           <a class="back" href="#/">목록</a>
           <div class="topbar-title">
-            <p class="eyebrow">📍 ${escapeHtml(trip.destination || "목적지 미정")}${trip.shareId && isSyncReady() ? " · 💌 실시간" : ""}</p>
+            <p class="eyebrow">📍 ${escapeHtml(trip.destination || countryOf(trip.country)?.name || "목적지 미정")}${trip.shareId && isSyncReady() ? " · 💌 실시간" : ""}</p>
             <h1>${escapeHtml(trip.name)}</h1>
           </div>
           <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">이름</button>
@@ -545,6 +565,29 @@ function renderInfo(trip) {
               <input type="date" name="endDate" value="${trip.endDate || ""}" required>
             </label>
             <button type="submit" class="primary-btn">날짜 저장</button>
+          </form>
+        </details>
+
+        <details class="group fold-card" data-fold="money" ${moneyOpen ? "open" : ""}>
+          <summary class="fold-summary">
+            <span class="fold-copy">
+              <span class="fold-title">💱 돈 단위</span>
+              <span class="fold-meta">${escapeHtml(countryOf(trip.country)?.name || "국가")} · ${escapeHtml(currencyOf(trip.currency).name)}</span>
+            </span>
+          </summary>
+          <form class="stack-form fold-body" data-form="money" data-id="${trip.id}">
+            <label>국가
+              <select name="country" required>
+                ${countryOptions(trip.country)}
+              </select>
+            </label>
+            <label>이 여행의 화폐
+              <select name="currency" required>
+                ${currencyOptions(trip.currency)}
+              </select>
+            </label>
+            <p class="hint">${escapeHtml(rateLabel(trip.currency))}</p>
+            <button type="submit" class="primary-btn">돈 단위 저장</button>
           </form>
         </details>
 
@@ -635,6 +678,7 @@ function renderInfo(trip) {
     </div>
   `;
   bindFolds(trip.id);
+  bindCountryCurrency(app);
 }
 
 function hereNavLink(place, { label = "🧭 길찾기", className = "place-here" } = {}) {
@@ -816,6 +860,13 @@ function renderMore(trip) {
             <span class="meta">${shop.total ? `${shop.bought}/${shop.total} 구매 완료` : "사고 싶은 걸 모아 보세요"}</span>
           </span>
         </a>
+        <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/ledger">
+          <span class="more-icon" aria-hidden="true">📒</span>
+          <span class="more-copy">
+            <strong>가계부</strong>
+            <span class="meta">${ledgerTotal(trip) ? moneyPairHtml(ledgerTotal(trip), trip.currency, getFxView(trip.id), getRates()) : "쓴 돈을 모아 보세요"}</span>
+          </span>
+        </a>
         <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/bingo">
           <span class="more-icon" aria-hidden="true">🍽️</span>
           <span class="more-copy">
@@ -860,9 +911,30 @@ function renderShopTab(trip) {
         </div>
       </header>
       <main class="content has-tabbar">
+        ${fxBarHtml(trip)}
         ${renderShop(trip)}
       </main>
       ${tabbar(trip, "shop")}
+    </div>
+  `;
+}
+
+function renderLedgerTab(trip) {
+  destroyMap();
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          <div class="topbar-title"><h1>📒 가계부</h1></div>
+          <button type="button" class="text-btn" data-action="add-ledger" data-id="${trip.id}">추가</button>
+        </div>
+      </header>
+      <main class="content has-tabbar">
+        ${fxBarHtml(trip)}
+        ${renderLedger(trip)}
+      </main>
+      ${tabbar(trip, "ledger")}
     </div>
   `;
 }
@@ -880,8 +952,8 @@ function openShopForm(trip, item = {}) {
       <label>상품명
         <input type="text" name="title" required maxlength="40" value="${escapeHtml(item.title || "")}" placeholder="예: 키링">
       </label>
-      <label>가격
-        <input type="text" name="price" maxlength="24" value="${escapeHtml(item.price || "")}" placeholder="선택 · 예: 1,200엔">
+      <label>가격 (${escapeHtml(currencyOf(trip.currency).name)})
+        <input type="text" name="amount" inputmode="decimal" maxlength="16" value="${item.amount ? escapeHtml(String(item.amount)) : ""}" placeholder="숫자만 · 선택">
       </label>
       <label>참고 이미지
         <input type="file" accept="image/*" data-shop-file>
@@ -901,6 +973,7 @@ function openShopForm(trip, item = {}) {
   const preview = sheet.querySelector("[data-shop-preview]");
   const clearBtn = sheet.querySelector("[data-shop-clear]");
   if (looksLikeImageData(item.image)) imageInput.value = item.image;
+  bindAmountInput(sheet.querySelector("[name='amount']"));
   sheet.querySelector("[name='title']")?.focus();
   sheet.querySelector("[data-shop-file]")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
@@ -943,7 +1016,7 @@ function openShopPhoto(trip, item) {
       ${item.bought ? `<span class="shop-bought" aria-hidden="true"></span><span class="shop-bought-check" aria-hidden="true">✓</span>` : ""}
     </div>
     <h2>${escapeHtml(item.title)}</h2>
-    <p class="photo-price ${item.price ? "" : "is-empty"}">${item.price ? escapeHtml(item.price) : "가격 미정"}</p>
+    <p class="photo-price ${item.amount ? "" : "is-empty"}">${item.amount ? moneyPairHtml(item.amount, trip.currency, getFxView(trip.id), getRates()) : "가격 미정"}</p>
     <button type="button" class="${item.bought ? "ghost-btn" : "primary-btn"}" data-action="toggle-shop-bought" data-id="${trip.id}" data-item="${item.id}">${item.bought ? "구매 완료 취소" : "구매 완료"}</button>
     <div class="card-actions photo-actions">
       <button type="button" class="ghost-btn" data-action="edit-shop" data-id="${trip.id}" data-item="${item.id}">수정</button>
@@ -1085,7 +1158,18 @@ function renderNew() {
             <input type="text" name="name" placeholder="예: 오사카 3박 4일" required maxlength="40">
           </label>
           <label>목적지
-            <input type="text" name="destination" placeholder="도시 또는 국가" maxlength="40">
+            <input type="text" name="destination" placeholder="도시 이름 · 선택" maxlength="40">
+          </label>
+          <label>국가
+            <select name="country" required>
+              <option value="">나라를 고르세요</option>
+              ${countryOptions("")}
+            </select>
+          </label>
+          <label>이 여행의 화폐
+            <select name="currency" required>
+              ${currencyOptions("JPY")}
+            </select>
           </label>
           <label>시작일
             <input type="date" name="startDate">
@@ -1098,6 +1182,7 @@ function renderNew() {
       </main>
     </div>
   `;
+  bindCountryCurrency(app);
 }
 
 function splitDateTime(value) {
@@ -1358,6 +1443,7 @@ function render() {
     else if (route.tab === "bingo") renderBingoTab(trip);
     else if (route.tab === "checklist") renderChecklistTab(trip);
     else if (route.tab === "shop") renderShopTab(trip);
+    else if (route.tab === "ledger") renderLedgerTab(trip);
     else if (route.tab === "more") renderMore(trip);
     else renderInfo(trip);
     return;
@@ -1418,14 +1504,27 @@ function onClick(event) {
         <label>목적지
           <input type="text" name="destination" value="${escapeHtml(trip.destination)}">
         </label>
+        <label>국가
+          <select name="country" required>
+            ${countryOptions(trip.country)}
+          </select>
+        </label>
+        <label>이 여행의 화폐
+          <select name="currency" required>
+            ${currencyOptions(trip.currency)}
+          </select>
+        </label>
         <button type="submit" class="primary-btn">저장</button>
       </form>
     `);
+    bindCountryCurrency(sheet);
     sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
       submitEvent.preventDefault();
       const data = new FormData(submitEvent.target);
       trip.name = String(data.get("name") || "").trim();
       trip.destination = String(data.get("destination") || "").trim();
+      trip.country = normalizeCountry(data.get("country"), data.get("currency"));
+      trip.currency = normalizeCurrency(data.get("currency"));
       upsertTrip(trip);
       closeSheet();
       render();
@@ -1522,6 +1621,11 @@ function onClick(event) {
     render();
     return;
   }
+  if (action === "fx-view" && trip) {
+    setFxView(trip.id, btn.dataset.view);
+    render();
+    return;
+  }
   if (action === "add-shop" && trip) {
     openShopForm(trip);
     return;
@@ -1552,6 +1656,27 @@ function onClick(event) {
       message: "이 상품을 지울까요?",
       onConfirm: () => {
         trip.shop.items = (trip.shop?.items || []).filter((entry) => entry.id !== btn.dataset.item);
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "add-ledger" && trip) {
+    openLedgerForm(trip);
+    return;
+  }
+  if (action === "edit-ledger" && trip) {
+    const item = (trip.ledger?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (item) openLedgerForm(trip, item);
+    return;
+  }
+  if (action === "delete-ledger" && trip) {
+    openConfirmSheet({
+      title: "항목 삭제",
+      message: "이 항목을 지울까요?",
+      onConfirm: () => {
+        trip.ledger.items = (trip.ledger?.items || []).filter((entry) => entry.id !== btn.dataset.item);
         upsertTrip(trip);
         render();
       },
@@ -1696,7 +1821,7 @@ function saveShop(trip, data) {
   const payload = {
     id: String(data.get("id") || "") || uid("shop"),
     title,
-    price: String(data.get("price") || "").trim(),
+    amount: parseAmount(data.get("amount")),
     image: looksLikeImageData(String(data.get("image") || "")) ? String(data.get("image")) : "",
     bought: false,
   };
@@ -1706,6 +1831,58 @@ function saveShop(trip, data) {
     payload.bought = Boolean(trip.shop.items[index].bought);
     trip.shop.items[index] = payload;
   } else trip.shop.items.push(payload);
+  upsertTrip(trip);
+  closeSheet();
+  render();
+}
+
+function openLedgerForm(trip, item = {}) {
+  const unit = currencyOf(trip.currency).name;
+  const sheet = openSheet(item.id ? "📒 항목 수정" : "📒 항목 추가", `
+    <form class="stack-form" data-form="ledger" data-id="${trip.id}">
+      <input type="hidden" name="id" value="${item.id || ""}">
+      <label>내용
+        <input type="text" name="title" required maxlength="40" value="${escapeHtml(item.title || "")}" placeholder="예: 편의점">
+      </label>
+      <label>금액 (${escapeHtml(unit)})
+        <input type="text" name="amount" inputmode="decimal" maxlength="16" value="${item.amount ? escapeHtml(String(item.amount)) : ""}" placeholder="숫자만" required>
+      </label>
+      <label>메모
+        <input type="text" name="note" maxlength="40" value="${escapeHtml(item.note || "")}" placeholder="선택">
+      </label>
+      <button type="submit" class="primary-btn">저장</button>
+    </form>
+  `);
+  bindAmountInput(sheet.querySelector("[name='amount']"));
+  sheet.querySelector("form")?.addEventListener("submit", (submitEvent) => {
+    submitEvent.preventDefault();
+    const current = getTrip(trip.id);
+    if (current) saveLedger(current, new FormData(submitEvent.target));
+  });
+  sheet.querySelector("[name='title']")?.focus();
+}
+
+function saveLedger(trip, data) {
+  const title = String(data.get("title") || "").trim();
+  const amount = parseAmount(data.get("amount"));
+  if (!title) {
+    toast("내용을 적어 주세요.");
+    return;
+  }
+  if (!amount) {
+    toast("금액을 숫자로 적어 주세요.");
+    return;
+  }
+  const payload = {
+    id: String(data.get("id") || "") || uid("led"),
+    title,
+    amount,
+    note: String(data.get("note") || "").trim(),
+  };
+  trip.ledger = trip.ledger || { items: [] };
+  const index = trip.ledger.items.findIndex((item) => item.id === payload.id);
+  if (index >= 0) trip.ledger.items[index] = payload;
+  else trip.ledger.items.push(payload);
   upsertTrip(trip);
   closeSheet();
   render();
@@ -1741,6 +1918,8 @@ app.addEventListener("submit", (event) => {
       id: uid("trip"),
       name: String(data.get("name") || "").trim(),
       destination: String(data.get("destination") || "").trim(),
+      country: normalizeCountry(data.get("country"), data.get("currency")),
+      currency: normalizeCurrency(data.get("currency")),
       startDate: String(data.get("startDate") || ""),
       endDate: String(data.get("endDate") || ""),
       flights: [],
@@ -1767,6 +1946,18 @@ app.addEventListener("submit", (event) => {
     if (startDate && endDate) setFold(trip.id, "dates", false);
     upsertTrip(trip);
     toast("🗓️ 날짜를 저장했습니다.");
+    render();
+    return;
+  }
+  if (form.dataset.form === "money") {
+    event.preventDefault();
+    const trip = getTrip(form.dataset.id);
+    if (!trip) return;
+    const data = new FormData(form);
+    trip.country = normalizeCountry(data.get("country"), data.get("currency"));
+    trip.currency = normalizeCurrency(data.get("currency"));
+    upsertTrip(trip);
+    toast(`${currencyOf(trip.currency).name}으로 저장했습니다.`);
     render();
     return;
   }
@@ -1809,6 +2000,10 @@ initStorage()
     });
     await hydrateCloud();
     render();
+    ensureRates().then(() => {
+      const route = parseRoute();
+      if (route.tab === "shop" || route.tab === "ledger" || route.tab === "info" || route.tab === "more") render();
+    }).catch(() => {});
     return initSync({
       onRemoteTrip: (remote) => {
         upsertTrip(remote, { fromRemote: true });
