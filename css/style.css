@@ -503,6 +503,17 @@ p { margin: 0; }
 }
 .place-actions { display: grid; gap: 2px; }
 
+.place-here {
+  margin-top: 8px;
+  width: fit-content;
+}
+
+.place-geo-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
 .fab {
   position: fixed;
   left: 50%;
@@ -691,9 +702,28 @@ p { margin: 0; }
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  padding: 6px 8px;
+  padding: 6px 4px 6px 8px;
   border: 0;
   background: none;
+  white-space: nowrap;
+}
+
+.route-stop-group {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.route-here {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px 0 2px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
   white-space: nowrap;
 }
 

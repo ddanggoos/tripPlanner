@@ -33,17 +33,48 @@ export function setRouteMode(mode) {
   if (engine === "google" && lastGooglePlaces.length) drawGoogleRoute(lastGooglePlaces);
 }
 
-export function googleMapsDirUrl(places, mode = getRouteMode()) {
-  const points = (places || []).filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
-  if (points.length < 2) return "";
+function mapsTravelMode(mode = getRouteMode()) {
+  return mode === "DRIVING" ? "driving" : "walking";
+}
+
+function mapsDirUrl(destination, { origin, waypoints, mode, placeId } = {}) {
+  if (!destination) return "";
   const url = new URL("https://www.google.com/maps/dir/");
   url.searchParams.set("api", "1");
-  url.searchParams.set("origin", `${points[0].lat},${points[0].lng}`);
-  url.searchParams.set("destination", `${points[points.length - 1].lat},${points[points.length - 1].lng}`);
-  url.searchParams.set("travelmode", mode === "DRIVING" ? "driving" : "walking");
-  const via = points.slice(1, -1).slice(0, 9);
-  if (via.length) url.searchParams.set("waypoints", via.map((place) => `${place.lat},${place.lng}`).join("|"));
+  url.searchParams.set("destination", destination);
+  if (placeId) url.searchParams.set("destination_place_id", placeId);
+  if (origin) url.searchParams.set("origin", origin);
+  if (waypoints) url.searchParams.set("waypoints", waypoints);
+  url.searchParams.set("travelmode", mapsTravelMode(mode));
   return url.toString();
+}
+
+export function googleMapsHereUrl(place, mode = getRouteMode()) {
+  if (!Number.isFinite(place?.lat) || !Number.isFinite(place?.lng)) return "";
+  return mapsDirUrl(`${place.lat},${place.lng}`, { mode, placeId: place.placeId || "" });
+}
+
+export function googleMapsDirUrl(places, mode = getRouteMode(), { fromHere = false } = {}) {
+  const points = (places || []).filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
+  if (!points.length) return "";
+  if (fromHere) {
+    const dest = points[points.length - 1];
+    const via = points.slice(0, -1).slice(0, 9);
+    return mapsDirUrl(`${dest.lat},${dest.lng}`, {
+      mode,
+      placeId: dest.placeId || "",
+      waypoints: via.length ? via.map((place) => `${place.lat},${place.lng}`).join("|") : "",
+    });
+  }
+  if (points.length < 2) return googleMapsHereUrl(points[0], mode);
+  const dest = points[points.length - 1];
+  const via = points.slice(1, -1).slice(0, 9);
+  return mapsDirUrl(`${dest.lat},${dest.lng}`, {
+    origin: `${points[0].lat},${points[0].lng}`,
+    mode,
+    placeId: dest.placeId || "",
+    waypoints: via.length ? via.map((place) => `${place.lat},${place.lng}`).join("|") : "",
+  });
 }
 
 export function isGoogleMapsReady() {
@@ -298,9 +329,11 @@ export function drawRoute(places) {
       icon: numberedIcon(index + 1),
       title: place.title,
     });
+    const here = googleMapsHereUrl(place);
     marker.bindPopup(`
       <strong>${escapeHtml(place.title || "장소")}</strong><br>
       ${place.time ? `${escapeHtml(place.time)} · ` : ""}${index + 1}번째
+      ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
     `);
     leafletMarkers.addLayer(marker);
   });
