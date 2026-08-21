@@ -126,10 +126,73 @@ function setFold(tripId, key, open) {
 
 function bindFolds(tripId) {
   app.querySelectorAll("details[data-fold]").forEach((el) => {
-    el.addEventListener("toggle", () => {
-      setFold(tripId, el.dataset.fold, el.open);
+    const summary = el.querySelector(":scope > summary");
+    summary?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const next = !el.open;
+      animateFold(el, next);
+      setFold(tripId, el.dataset.fold, next);
     });
   });
+}
+
+function foldPanels(el) {
+  return [...el.children].filter((node) => node instanceof HTMLElement && node.tagName !== "SUMMARY");
+}
+
+function animateFold(el, open) {
+  const panels = foldPanels(el);
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || !panels.length) {
+    el.open = open;
+    return;
+  }
+  if (el.dataset.folding === "1") return;
+  el.dataset.folding = "1";
+
+  const clear = () => {
+    panels.forEach((node) => {
+      node.style.height = "";
+      node.style.overflow = "";
+      node.style.opacity = "";
+      node.style.transition = "";
+    });
+    delete el.dataset.folding;
+  };
+
+  const tick = (fn) => requestAnimationFrame(() => requestAnimationFrame(fn));
+
+  if (open) {
+    el.open = true;
+    panels.forEach((node) => {
+      const target = node.scrollHeight;
+      node.style.overflow = "hidden";
+      node.style.opacity = "0";
+      node.style.height = "0px";
+      node.style.transition = "height 280ms ease, opacity 220ms ease";
+      tick(() => {
+        node.style.opacity = "1";
+        node.style.height = `${target}px`;
+      });
+    });
+    window.setTimeout(clear, 320);
+    return;
+  }
+
+  panels.forEach((node) => {
+    node.style.overflow = "hidden";
+    node.style.opacity = "1";
+    node.style.height = `${node.scrollHeight}px`;
+    node.style.transition = "height 280ms ease, opacity 180ms ease";
+    tick(() => {
+      node.style.opacity = "0";
+      node.style.height = "0px";
+    });
+  });
+  window.setTimeout(() => {
+    el.open = false;
+    clear();
+  }, 300);
 }
 
 let selectedDates = loadSelectedDates();

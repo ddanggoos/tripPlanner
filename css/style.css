@@ -518,6 +518,7 @@ a.more-row {
   padding: 8px;
   font-size: 14px;
 }
+.stack-form input[type="date"],
 .stack-form input[type="time"],
 .stack-form input[type="datetime-local"] {
   display: block;
@@ -526,6 +527,12 @@ a.more-row {
   padding-right: 8px;
   appearance: none;
   -webkit-appearance: none;
+}
+
+.stack-form label:has(> input[type="date"]),
+.stack-form label:has(> input[type="time"]),
+.stack-form label:has(> input[type="datetime-local"]) {
+  overflow: hidden;
 }
 
 .stack-form input[type="date"]::-webkit-datetime-edit,
