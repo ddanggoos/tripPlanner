@@ -1,5 +1,7 @@
+import { withVersion } from "./version.js";
+
 const STORAGE_KEY = "tripPlanner:data";
-const SEED_URL = new URL("../data/trips.json", import.meta.url);
+const SEED_URL = withVersion(new URL("../data/trips.json", import.meta.url));
 
 export const DEFAULT_BINGO_ITEMS = [
   "현지 아침",

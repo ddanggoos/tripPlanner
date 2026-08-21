@@ -1,4 +1,4 @@
-import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js?v=0.4.4";
+import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 const FIREBASE_APP_URL = "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 const FIREBASE_DB_URL = "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
