@@ -11,6 +11,7 @@
 - 항공권 / 호텔 저장
 - 일자별 장소 추가, 순서 변경
 - 날짜를 고르면 지도에 번호 마커와 루트가 이어짐
+- 구글 지도에서 장소 검색·지도 탭에서 핀 찍기 (API 연결 시)
 - 먹거리 빙고 5x5
 
 ## 데이터
@@ -32,6 +33,23 @@
 7. 여행 상세에서 **링크 보내기** → 아이폰 공유 시트로 카톡/메시지 전송
 
 링크를 아는 사람은 그 여행을 읽고 고칠 수 있으니, 공개 게시하지 마세요.
+
+## 구글 지도로 장소 찾기
+
+지금 쓰는 Firebase 프로젝트의 웹 API 키로 Maps를 불러옵니다. Cloud Console에서 아래 API만 켜면 검색·지도 탭이 구글 지도로 바뀝니다. 켜기 전에는 예전처럼 OpenStreetMap으로 동작합니다.
+
+1. [Google Cloud 콘솔](https://console.cloud.google.com/google/maps-apis)에서 Firebase와 같은 프로젝트 선택
+2. **Maps JavaScript API**, **Places API** (New), **Geocoding API** 사용 설정
+3. 결제 계정 연결 (Maps는 월 크레딧이 있어 개인 여행 용도로는 보통 무료 범위입니다)
+4. API 키 제한:
+   - 애플리케이션: HTTP 리퍼러
+   - `https://ddanggoos.github.io/*`
+   - `http://localhost:*`
+   - `http://127.0.0.1:*`
+   - API 제한: 위에서 켠 세 가지
+5. 키를 따로 쓰려면 [`js/maps-config.js`](js/maps-config.js)의 `GOOGLE_MAPS_API_KEY`에 넣기. 비워 두면 Firebase 키를 씁니다.
+
+지도 탭에서 상호를 검색하거나, 지도의 가게를 누르면 장소 시트에 이름과 좌표가 채워집니다. 일정 탭의 장소 추가에도 같은 검색창이 있습니다.
 
 ## 로컬에서 보기
 
