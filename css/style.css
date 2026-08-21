@@ -133,7 +133,8 @@ p { margin: 0; }
   .shop-tile,
   .shop-bought-check,
   .photo-modal,
-  .photo-backdrop {
+  .photo-backdrop,
+  .fx-knob {
     transition: none;
     animation: none;
   }
@@ -1201,41 +1202,53 @@ a.more-row {
   font-size: 14px;
 }
 
-.fx-dock {
-  display: grid;
+.fx-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  margin: 0 2px 14px;
+  margin: 0 4px 12px;
 }
 
-.fx-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 4px;
-  background: var(--card);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
+.fx-label {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.fx-toggle button {
-  min-height: 40px;
+.fx-switch {
+  position: relative;
+  width: 51px;
+  height: 31px;
+  min-height: 31px;
+  min-width: 51px;
+  padding: 0;
   border: 0;
-  border-radius: 12px;
-  background: transparent;
-  font-weight: 700;
+  border-radius: 999px;
+  background: #e5e5ea;
+  flex: 0 0 auto;
 }
 
-.fx-toggle button.is-on {
-  background: var(--accent-grad);
-  color: #fff;
-  box-shadow: var(--shadow-accent);
+.fx-switch.is-on { background: #34c759; }
+
+@media (prefers-color-scheme: dark) {
+  .fx-switch { background: #39393d; }
+  .fx-switch.is-on { background: #30d158; }
 }
 
-.fx-rate {
-  margin: 0 6px;
-  color: var(--muted);
-  font-size: 13px;
+.fx-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+  transition: transform 200ms ease;
 }
+
+.fx-switch.is-on .fx-knob { transform: translateX(20px); }
 
 .money-pair {
   display: grid;

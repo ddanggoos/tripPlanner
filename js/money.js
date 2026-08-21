@@ -134,39 +134,97 @@ export function setFxView(tripId, view) {
   }
 }
 
-export function moneyPairHtml(amount, code, view = "local", table = rates) {
-  const value = Number(amount) || 0;
-  if (!value) return "";
-  const currency = normalizeCurrency(code);
-  const local = formatMoney(value, currency);
-  if (currency === "KRW") {
+export function rateOf(unit, table = rates) {
+  const code = normalizeCurrency(unit);
+  if (code === "KRW") return 1;
+  return Number(table[code]) || 0;
+}
+
+export function snapshotRate(unit, table = rates) {
+  const code = normalizeCurrency(unit);
+  return code === "KRW" ? 1 : rateOf(code, table);
+}
+
+export function itemUnit(item, fallback = "KRW") {
+  return normalizeCurrency(item?.unit || fallback);
+}
+
+export function itemKrw(item, live = rates) {
+  const amount = parseAmount(item?.amount);
+  if (!amount) return 0;
+  const unit = itemUnit(item);
+  if (unit === "KRW") return amount;
+  const stored = Number(item?.rate);
+  const rate = stored > 0 ? stored : rateOf(unit, live);
+  return amount * rate;
+}
+
+export function itemMoneyHtml(item, view = "local") {
+  const amount = parseAmount(item?.amount);
+  if (!amount) return "";
+  const unit = itemUnit(item);
+  if (unit === "KRW") {
+    return `<span class="money-pair"><strong class="money-main">${escapeHtml(formatMoney(amount, "KRW"))}</strong></span>`;
+  }
+  const local = formatMoney(amount, unit);
+  const krwValue = itemKrw(item);
+  if (!krwValue) {
     return `<span class="money-pair"><strong class="money-main">${escapeHtml(local)}</strong></span>`;
   }
-  const krw = formatMoney(toKrw(value, currency, table), "KRW");
+  const krw = formatMoney(krwValue, "KRW");
   const main = view === "krw" ? krw : local;
   const sub = view === "krw" ? local : krw;
   return `<span class="money-pair"><strong class="money-main">${escapeHtml(main)}</strong><small class="money-sub">${escapeHtml(sub)}</small></span>`;
 }
 
-export function fxBarHtml(trip, { rates: table = rates } = {}) {
-  const currency = normalizeCurrency(trip.currency);
-  const view = getFxView(trip.id);
-  if (currency === "KRW") {
-    return `
-      <div class="fx-dock">
-        <p class="fx-rate">이 여행은 원화입니다.</p>
-      </div>
-    `;
+export function totalsMoneyHtml(items, tripCurrency, view = "local") {
+  const list = Array.isArray(items) ? items : [];
+  let krw = 0;
+  let local = 0;
+  for (const item of list) {
+    krw += itemKrw(item);
+    if (itemUnit(item) !== "KRW") local += parseAmount(item.amount);
   }
-  const localName = currencyOf(currency).name;
+  const localUnit = normalizeCurrency(tripCurrency);
+  if (!krw && !local) return `<span class="money-pair"><strong class="money-main">${escapeHtml(formatMoney(0, view === "local" && localUnit !== "KRW" ? localUnit : "KRW"))}</strong></span>`;
+  if (!local || localUnit === "KRW") {
+    return `<span class="money-pair"><strong class="money-main">${escapeHtml(formatMoney(krw, "KRW"))}</strong></span>`;
+  }
+  const localText = formatMoney(local, localUnit);
+  const krwText = formatMoney(krw, "KRW");
+  const main = view === "krw" ? krwText : localText;
+  const sub = view === "krw" ? localText : krwText;
+  return `<span class="money-pair"><strong class="money-main">${escapeHtml(main)}</strong><small class="money-sub">${escapeHtml(sub)}</small></span>`;
+}
+
+export function moneyPairHtml(amount, code, view = "local", table = rates) {
+  return itemMoneyHtml({ amount, unit: code, rate: rateOf(code, table) }, view);
+}
+
+export function fxBarHtml(trip) {
+  if (normalizeCurrency(trip.currency) === "KRW") return "";
+  const on = getFxView(trip.id) === "krw";
   return `
-    <div class="fx-dock">
-      <div class="fx-toggle" role="tablist" aria-label="화폐 보기">
-        <button type="button" class="${view === "local" ? "is-on" : ""}" data-action="fx-view" data-id="${trip.id}" data-view="local">${escapeHtml(localName)}</button>
-        <button type="button" class="${view === "krw" ? "is-on" : ""}" data-action="fx-view" data-id="${trip.id}" data-view="krw">원화</button>
-      </div>
-      <p class="fx-rate">${escapeHtml(rateLabel(currency, table))}</p>
+    <div class="fx-row">
+      <span class="fx-label">원화로 보기</span>
+      <button type="button" class="fx-switch ${on ? "is-on" : ""}" data-action="fx-view" data-id="${trip.id}" role="switch" aria-checked="${on}" aria-label="원화로 보기">
+        <span class="fx-knob" aria-hidden="true"></span>
+      </button>
     </div>
+  `;
+}
+
+export function unitFieldHtml(trip, selected) {
+  const local = normalizeCurrency(trip.currency);
+  const current = normalizeCurrency(selected || local);
+  if (local === "KRW") return `<input type="hidden" name="unit" value="KRW">`;
+  return `
+    <label>화폐
+      <select name="unit">
+        <option value="${local}" ${current !== "KRW" ? "selected" : ""}>${escapeHtml(currencyOf(local).name)}</option>
+        <option value="KRW" ${current === "KRW" ? "selected" : ""}>원화</option>
+      </select>
+    </label>
   `;
 }
 

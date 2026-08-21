@@ -1,4 +1,4 @@
-import { getFxView, getRates, moneyPairHtml, normalizeCurrency } from "./money.js";
+import { getFxView, itemMoneyHtml } from "./money.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -111,7 +111,7 @@ export function renderShop(trip) {
             ? `<img src="${item.image}" alt="" class="shop-thumb">`
             : `<span class="shop-emoji" aria-hidden="true">${emojis[item.id] || "🛍️"}</span>`}
           ${done ? `<span class="shop-bought" aria-hidden="true"></span><span class="shop-bought-check" aria-hidden="true">✓</span>` : ""}
-          <span class="shop-tile-name"><span class="shop-tile-copy">${escapeHtml(item.title)}</span>${item.amount ? `<span class="shop-tile-price">${moneyPairHtml(item.amount, normalizeCurrency(trip.currency), getFxView(trip.id), getRates())}</span>` : ""}</span>
+          <span class="shop-tile-name"><span class="shop-tile-copy">${escapeHtml(item.title)}</span>${item.amount ? `<span class="shop-tile-price">${itemMoneyHtml(item, getFxView(trip.id))}</span>` : ""}</span>
         </button>
       `;
     }).join("")

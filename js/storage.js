@@ -43,28 +43,42 @@ function normalizeChecklist(raw = {}) {
   };
 }
 
-function normalizeShop(raw = {}) {
+function normalizeShop(raw = {}, tripCurrency = "KRW") {
+  const fallback = normalizeCurrency(tripCurrency);
   const source = Array.isArray(raw.items) ? raw.items : [];
   return {
-    items: source.map((item, index) => ({
-      id: item.id || uid("shop"),
-      title: String(item.title || `상품 ${index + 1}`).trim() || `상품 ${index + 1}`,
-      amount: parseAmount(item.amount ?? item.price),
-      image: looksLikeStoredImage(item.image) ? item.image : "",
-      bought: Boolean(item.bought),
-    })),
+    items: source.map((item, index) => {
+      const amount = parseAmount(item.amount ?? item.price);
+      const unit = amount ? normalizeCurrency(item.unit || fallback) : "KRW";
+      return {
+        id: item.id || uid("shop"),
+        title: String(item.title || `상품 ${index + 1}`).trim() || `상품 ${index + 1}`,
+        amount,
+        unit,
+        rate: unit === "KRW" ? 1 : (Number(item.rate) > 0 ? Number(item.rate) : 0),
+        image: looksLikeStoredImage(item.image) ? item.image : "",
+        bought: Boolean(item.bought),
+      };
+    }),
   };
 }
 
-function normalizeLedger(raw = {}) {
+function normalizeLedger(raw = {}, tripCurrency = "KRW") {
+  const fallback = normalizeCurrency(tripCurrency);
   const source = Array.isArray(raw.items) ? raw.items : [];
   return {
-    items: source.map((item, index) => ({
-      id: item.id || uid("led"),
-      title: String(item.title || `항목 ${index + 1}`).trim() || `항목 ${index + 1}`,
-      amount: parseAmount(item.amount),
-      note: String(item.note || "").trim(),
-    })),
+    items: source.map((item, index) => {
+      const amount = parseAmount(item.amount);
+      const unit = amount ? normalizeCurrency(item.unit || fallback) : "KRW";
+      return {
+        id: item.id || uid("led"),
+        title: String(item.title || `항목 ${index + 1}`).trim() || `항목 ${index + 1}`,
+        amount,
+        unit,
+        rate: unit === "KRW" ? 1 : (Number(item.rate) > 0 ? Number(item.rate) : 0),
+        note: String(item.note || "").trim(),
+      };
+    }),
   };
 }
 
@@ -155,8 +169,8 @@ function normalizeTrip(trip = {}) {
     places: Array.isArray(trip.places) ? trip.places : [],
     bingo: normalizeBingo(trip.bingo),
     checklist: normalizeChecklist(trip.checklist),
-    shop: normalizeShop(trip.shop),
-    ledger: normalizeLedger(trip.ledger),
+    shop: normalizeShop(trip.shop, currency),
+    ledger: normalizeLedger(trip.ledger, currency),
   };
 }
 
