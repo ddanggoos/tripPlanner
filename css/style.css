@@ -332,6 +332,9 @@ p { margin: 0; }
 .stack-form input[type="time"],
 .stack-form input[type="datetime-local"] {
   display: block;
+  overflow: hidden;
+  padding-left: 8px;
+  padding-right: 8px;
   appearance: none;
   -webkit-appearance: none;
 }

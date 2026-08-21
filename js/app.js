@@ -718,7 +718,23 @@ function renderNew() {
   `;
 }
 
+function splitDateTime(value) {
+  const raw = String(value || "");
+  if (!raw) return { date: "", time: "" };
+  const [date, time = ""] = raw.split("T");
+  return { date, time: time.slice(0, 5) };
+}
+
+function joinDateTime(date, time) {
+  const d = String(date || "").trim();
+  const t = String(time || "").trim();
+  if (!d) return "";
+  return t ? `${d}T${t}` : d;
+}
+
 function flightForm(flight = {}) {
+  const depart = splitDateTime(flight.departAt);
+  const arrive = splitDateTime(flight.arriveAt);
   return `
     <form class="stack-form" data-form="flight">
       <input type="hidden" name="id" value="${flight.id || ""}">
@@ -736,11 +752,17 @@ function flightForm(flight = {}) {
           <input type="text" name="to" value="${escapeHtml(flight.to || "")}" placeholder="KIX">
         </label>
       </div>
+      <label>출발일
+        <input type="date" name="departDate" value="${escapeHtml(depart.date)}">
+      </label>
       <label>출발 시각
-        <input type="datetime-local" name="departAt" value="${escapeHtml(flight.departAt || "")}">
+        <input type="time" name="departTime" value="${escapeHtml(depart.time)}">
+      </label>
+      <label>도착일
+        <input type="date" name="arriveDate" value="${escapeHtml(arrive.date)}">
       </label>
       <label>도착 시각
-        <input type="datetime-local" name="arriveAt" value="${escapeHtml(flight.arriveAt || "")}">
+        <input type="time" name="arriveTime" value="${escapeHtml(arrive.time)}">
       </label>
       <label>예약번호
         <input type="text" name="pnr" value="${escapeHtml(flight.pnr || "")}" placeholder="ABC123">
@@ -1060,8 +1082,8 @@ function saveFlight(trip, data) {
     flightNo: String(data.get("flightNo") || "").trim(),
     from: String(data.get("from") || "").trim(),
     to: String(data.get("to") || "").trim(),
-    departAt: String(data.get("departAt") || ""),
-    arriveAt: String(data.get("arriveAt") || ""),
+    departAt: joinDateTime(data.get("departDate"), data.get("departTime")),
+    arriveAt: joinDateTime(data.get("arriveDate"), data.get("arriveTime")),
     pnr: String(data.get("pnr") || "").trim(),
     note: String(data.get("note") || "").trim(),
   };
