@@ -17,8 +17,9 @@
 ## 데이터
 
 - 기본값: [`data/trips.json`](data/trips.json)
-- 화면에서 고친 내용은 이 브라우저의 localStorage에 저장됩니다.
-- 다른 기기와 맞추려면 화면의 **내보내기**로 `trips.json`을 받은 뒤 `data/trips.json`에 넣고 커밋하거나, **가져오기**로 다시 읽으면 됩니다.
+- 화면에서 고친 내용은 이 브라우저에도 남고, Firebase Realtime Database의 `appState`에서 **실시간으로** 맞춥니다. Maps 키를 읽듯이 `.../appState.json` REST로 불러온 뒤 `onValue`로 구독합니다.
+- 같은 사이트 주소만 열면 사파리·크롬·다른 폰에서도 같은 목록이 나옵니다. Firebase 규칙에 [`database.rules.json`](database.rules.json)의 `appState`가 있어야 합니다.
+- JSON 백업은 **내보내기** / **가져오기**를 쓰면 됩니다.
 
 ## 여자친구와 실시간 공유
 

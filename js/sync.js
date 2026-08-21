@@ -163,3 +163,70 @@ export async function fetchSharedTrip(shareId) {
   const snapshot = await withTimeout(api.get(tripRef(shareId)), 8000, "shared-trip");
   return snapshot.val() || null;
 }
+
+const STATE_PATH = "appState";
+let stateTimer = null;
+let stateUnsub = null;
+let lastStatePush = 0;
+
+function stateUrl() {
+  if (!firebaseConfig.databaseURL) return "";
+  return `${firebaseConfig.databaseURL.replace(/\/$/, "")}/${STATE_PATH}.json`;
+}
+
+function looksLikeAppState(value) {
+  return Boolean(value && typeof value === "object" && Array.isArray(value.trips));
+}
+
+export async function fetchAppState() {
+  const url = stateUrl();
+  if (!url) return null;
+  try {
+    const res = await withTimeout(fetch(url, { cache: "no-store" }), 8000, "app-state");
+    if (!res.ok) return null;
+    const value = await res.json();
+    return looksLikeAppState(value) ? value : null;
+  } catch (error) {
+    console.warn("appState fetch failed", error);
+    return null;
+  }
+}
+
+export async function pushAppState(state) {
+  const payload = {
+    trips: JSON.parse(JSON.stringify(state?.trips || [])),
+    updatedAt: Date.now(),
+  };
+  lastStatePush = payload.updatedAt;
+  if (db && api) {
+    await api.set(api.ref(db, STATE_PATH), payload);
+    return;
+  }
+  const url = stateUrl();
+  if (!url) return;
+  const res = await withTimeout(fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }), 8000, "app-state-put");
+  if (!res.ok) throw new Error("클라우드 저장에 실패했습니다.");
+}
+
+export function schedulePushAppState(state) {
+  if (!firebaseConfig.databaseURL) return;
+  window.clearTimeout(stateTimer);
+  stateTimer = window.setTimeout(() => {
+    pushAppState(state).catch((error) => console.warn("appState push failed", error));
+  }, 400);
+}
+
+export function subscribeAppState(onData) {
+  if (!db || !api) return;
+  stateUnsub?.();
+  stateUnsub = api.onValue(api.ref(db, STATE_PATH), (snapshot) => {
+    const data = snapshot.val();
+    if (!looksLikeAppState(data)) return;
+    if (data.updatedAt && data.updatedAt === lastStatePush) return;
+    onData?.(data);
+  });
+}

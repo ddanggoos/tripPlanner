@@ -69,24 +69,33 @@ function normalizeState(raw) {
 
 let afterSave = null;
 let afterDelete = null;
+let afterStateChange = null;
 
-export function setSyncHooks({ onSave, onDelete } = {}) {
+export function setSyncHooks({ onSave, onDelete, onStateChange } = {}) {
   afterSave = onSave || null;
   afterDelete = onDelete || null;
+  afterStateChange = onStateChange || null;
 }
 
 export function getState() {
   return state;
 }
 
-export function save() {
+export function save(options = {}) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!options.silent) afterStateChange?.(state);
 }
 
-export function setState(next) {
+export function setState(next, options = {}) {
   state = normalizeState(next);
-  save();
+  save({ silent: options.fromRemote });
   return state;
+}
+
+let loadedFromLocal = false;
+
+export function wasLoadedFromLocal() {
+  return loadedFromLocal;
 }
 
 export async function initStorage() {
@@ -119,6 +128,7 @@ export async function initStorage() {
   }
 
   state = parsedSaved ? normalizeState(parsedSaved) : structuredClone(seed);
+  loadedFromLocal = Boolean(parsedSaved);
   return state;
 }
 

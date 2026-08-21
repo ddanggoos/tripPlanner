@@ -6,6 +6,10 @@
         ".write": true
       }
     },
+    "appState": {
+      ".read": true,
+      ".write": true
+    },
     "appConfig": {
       ".read": true,
       ".write": false,
