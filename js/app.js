@@ -693,7 +693,7 @@ function renderInfo(trip) {
                 ${hotel.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
                 ${hotel.note ? `<p class="note">${escapeHtml(hotel.note)}</p>` : ""}
                 <div class="card-actions">
-                  <span class="card-actions-spacer"></span>
+                  ${hereNavLink(hotelPin(hotel)) || `<span class="card-actions-spacer"></span>`}
                   <button type="button" class="ghost-btn" data-action="edit-hotel" data-id="${trip.id}" data-item="${hotel.id}">수정</button>
                   <button type="button" class="ghost-btn danger" data-action="delete-hotel" data-id="${trip.id}" data-item="${hotel.id}">삭제</button>
                 </div>
@@ -726,8 +726,25 @@ function renderInfo(trip) {
 function hereNavLink(place, { label = "🧭 길찾기", className = "place-here" } = {}) {
   const href = googleMapsHereUrl(place);
   if (!href) return "";
-  const title = escapeHtml(place.title || "장소");
+  const title = escapeHtml(place.title || place.name || "장소");
   return `<a class="${className}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" aria-label="현 위치에서 ${title}까지 길찾기">${label}</a>`;
+}
+
+function hotelPin(hotel) {
+  return {
+    title: hotel.name || "숙소",
+    name: hotel.name,
+    address: hotel.address,
+    lat: hotel.lat,
+    lng: hotel.lng,
+    placeId: hotel.placeId,
+  };
+}
+
+function mappedHotels(trip) {
+  return (trip.hotels || [])
+    .map(hotelPin)
+    .filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng));
 }
 
 function placeCard(trip, place, index, total) {
@@ -775,9 +792,13 @@ function renderPlan(trip, date) {
   `;
 }
 
-function routeStrip(places) {
+function routeStrip(places, hotels = []) {
   const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
+  const hotelPins = hotels.filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng));
   if (!pinned.length) {
+    if (hotelPins.length) {
+      return `<p class="map-hint">🏨 숙소 ${hotelPins.length}곳이 지도에 항상 표시됩니다. 날짜 장소를 추가하면 경로가 이어집니다.</p>`;
+    }
     return `<p class="map-hint">📍 지도를 누르거나 장소 이름·구글맵 링크로 추가하세요.</p>`;
   }
   const mode = getRouteMode();
@@ -815,6 +836,7 @@ function routeStrip(places) {
 function renderMapTab(trip, date) {
   const selected = selectedDateFor(trip, date);
   const places = selected ? placesForDate(trip, selected) : [];
+  const hotels = mappedHotels(trip);
   app.innerHTML = `
     <div class="screen map-screen">
       <header class="topbar overlay">
@@ -832,24 +854,26 @@ function renderMapTab(trip, date) {
         </div>
       </header>
       <div id="map" class="map-canvas" role="application" aria-label="일정 지도"></div>
-      ${routeStrip(places)}
+      ${routeStrip(places, hotels)}
       ${tabbar(trip, "map")}
     </div>
   `;
   const mapEl = document.getElementById("map");
-  if (selected) {
+  if (selected || hotels.length) {
     void (async () => {
       await initMap(mapEl, {
-        onClick: (spot) => openPlaceSheet(trip, {
-          date: selected,
-          title: spot.title || "",
-          lat: spot.lat,
-          lng: spot.lng,
-          placeId: spot.placeId || "",
-        }),
+        onClick: selected
+          ? (spot) => openPlaceSheet(trip, {
+            date: selected,
+            title: spot.title || "",
+            lat: spot.lat,
+            lng: spot.lng,
+            placeId: spot.placeId || "",
+          })
+          : undefined,
       });
       if (!document.body.contains(mapEl)) return;
-      drawRoute(places);
+      drawRoute(places, hotels);
     })();
   } else {
     destroyMap();
@@ -1316,7 +1340,14 @@ function hotelForm(hotel = {}) {
   return `
     <form class="stack-form" data-form="hotel">
       <input type="hidden" name="id" value="${hotel.id || ""}">
-      <label>호텔 이름
+      <input type="hidden" name="lat" value="${hotel.lat ?? ""}">
+      <input type="hidden" name="lng" value="${hotel.lng ?? ""}">
+      <input type="hidden" name="placeId" value="${escapeHtml(hotel.placeId || "")}">
+      <label>구글에서 찾기
+        <input type="search" name="lookup" data-hotel-lookup placeholder="호텔, 숙소, 주소, 구글맵 링크" enterkeyhint="search" autocomplete="off">
+      </label>
+      <div class="search-results sheet-results" data-hotel-suggest hidden></div>
+      <label>숙소 이름
         <input type="text" name="name" value="${escapeHtml(hotel.name || "")}" required placeholder="호텔 이름">
       </label>
       <label>체크인
@@ -1326,7 +1357,7 @@ function hotelForm(hotel = {}) {
         <input type="date" name="checkOut" value="${escapeHtml(hotel.checkOut || "")}">
       </label>
       <label>주소
-        <input type="text" name="address" value="${escapeHtml(hotel.address || "")}">
+        <input type="text" name="address" value="${escapeHtml(hotel.address || "")}" placeholder="구글에서 고르면 채워져요">
       </label>
       <label>예약번호
         <input type="text" name="pnr" value="${escapeHtml(hotel.pnr || "")}">
@@ -1334,9 +1365,58 @@ function hotelForm(hotel = {}) {
       <label>메모
         <textarea name="note" rows="2">${escapeHtml(hotel.note || "")}</textarea>
       </label>
+      <div data-hotel-meta>${hotelGeoHint(hotel)}</div>
       <button type="submit" class="primary-btn">저장</button>
     </form>
   `;
+}
+
+function hotelGeoHint(hotel = {}) {
+  if (Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng)) {
+    return `
+      <p class="hint" data-hotel-geo>📍 위치 ${hotel.lat.toFixed(5)}, ${hotel.lng.toFixed(5)}</p>
+      <div class="place-geo-links">
+        ${hereNavLink(hotelPin(hotel), { className: "text-btn google-link" })}
+        <a class="text-btn google-link" href="${googleMapsUrl(hotelPin(hotel))}" target="_blank" rel="noopener noreferrer">🗺 구글 지도에서 보기</a>
+      </div>
+    `;
+  }
+  return `<p class="hint" data-hotel-geo>📍 숙소 이름·구글맵 링크로 찾으면 지도에 항상 표시됩니다.</p>`;
+}
+
+function fillHotelFields(form, item) {
+  if (!form || !item) return;
+  if (item.title) form.querySelector("[name='name']").value = item.title;
+  if (item.label) form.querySelector("[name='address']").value = item.label;
+  if (Number.isFinite(item.lat)) form.querySelector("[name='lat']").value = item.lat;
+  if (Number.isFinite(item.lng)) form.querySelector("[name='lng']").value = item.lng;
+  if (item.placeId) form.querySelector("[name='placeId']").value = item.placeId;
+  const lookup = form.querySelector("[name='lookup']");
+  if (lookup) lookup.value = "";
+  const meta = form.querySelector("[data-hotel-meta]");
+  if (meta) {
+    meta.innerHTML = hotelGeoHint({
+      name: item.title,
+      address: item.label,
+      lat: item.lat,
+      lng: item.lng,
+      placeId: item.placeId,
+    });
+  }
+}
+
+function openHotelSheet(trip, hotel = {}) {
+  const sheet = openSheet(hotel.id ? "🏨 숙소 수정" : "🏨 숙소 추가", hotelForm(hotel));
+  const form = sheet.querySelector("form");
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveHotel(trip, new FormData(event.target));
+  });
+  bindPlaceSearch(sheet, {
+    input: sheet.querySelector("[data-hotel-lookup]"),
+    results: sheet.querySelector("[data-hotel-suggest]"),
+    onPick: (item) => fillHotelFields(form, item),
+  });
 }
 
 function bindPlaceSearch(root, { input, results, onPick }) {
@@ -1625,23 +1705,15 @@ function onClick(event) {
     return;
   }
   if (action === "add-hotel" && trip) {
-    const sheet = openSheet("🏨 호텔 추가", hotelForm({
+    openHotelSheet(trip, {
       checkIn: trip.startDate,
       checkOut: trip.endDate,
-    }));
-    sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
-      submitEvent.preventDefault();
-      saveHotel(trip, new FormData(submitEvent.target));
     });
     return;
   }
   if (action === "edit-hotel" && trip) {
     const hotel = trip.hotels.find((item) => item.id === btn.dataset.item);
-    const sheet = openSheet("🏨 호텔 수정", hotelForm(hotel));
-    sheet.querySelector("form").addEventListener("submit", (submitEvent) => {
-      submitEvent.preventDefault();
-      saveHotel(trip, new FormData(submitEvent.target));
-    });
+    if (hotel) openHotelSheet(trip, hotel);
     return;
   }
   if (action === "delete-hotel" && trip) {
@@ -2190,6 +2262,10 @@ async function saveLedger(trip, data) {
 
 function saveHotel(trip, data) {
   const id = String(data.get("id") || "");
+  const latRaw = data.get("lat");
+  const lngRaw = data.get("lng");
+  const lat = latRaw === "" ? null : Number(latRaw);
+  const lng = lngRaw === "" ? null : Number(lngRaw);
   const payload = {
     id: id || uid("hotel"),
     name: String(data.get("name") || "").trim(),
@@ -2198,10 +2274,20 @@ function saveHotel(trip, data) {
     address: String(data.get("address") || "").trim(),
     pnr: String(data.get("pnr") || "").trim(),
     note: String(data.get("note") || "").trim(),
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    placeId: String(data.get("placeId") || "").trim(),
   };
   const index = trip.hotels.findIndex((item) => item.id === payload.id);
-  if (index >= 0) trip.hotels[index] = payload;
-  else trip.hotels.push(payload);
+  if (index >= 0) {
+    const prev = trip.hotels[index];
+    if (!Number.isFinite(payload.lat) && Number.isFinite(prev.lat)) {
+      payload.lat = prev.lat;
+      payload.lng = prev.lng;
+      payload.placeId = payload.placeId || prev.placeId;
+    }
+    trip.hotels[index] = payload;
+  } else trip.hotels.push(payload);
   upsertTrip(trip);
   closeSheet();
   render();

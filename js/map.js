@@ -17,6 +17,7 @@ let googleInfo = null;
 let googleClick = null;
 let googleRenderer = null;
 let lastGooglePlaces = [];
+let lastGoogleHotels = [];
 let googleReady = false;
 let googleFailed = false;
 let googleLoad = null;
@@ -30,7 +31,9 @@ export function getRouteMode() {
 
 export function setRouteMode(mode) {
   localStorage.setItem(ROUTE_MODE_KEY, mode === "DRIVING" ? "DRIVING" : "WALKING");
-  if (engine === "google" && lastGooglePlaces.length) drawGoogleRoute(lastGooglePlaces);
+  if (engine === "google" && (lastGooglePlaces.length || lastGoogleHotels.length)) {
+    drawGoogleRoute(lastGooglePlaces, lastGoogleHotels);
+  }
 }
 
 function mapsTravelMode(mode = getRouteMode()) {
@@ -50,8 +53,13 @@ function mapsDirUrl(destination, { origin, waypoints, mode, placeId } = {}) {
 }
 
 export function googleMapsHereUrl(place, mode = getRouteMode()) {
-  if (!Number.isFinite(place?.lat) || !Number.isFinite(place?.lng)) return "";
-  return mapsDirUrl(`${place.lat},${place.lng}`, { mode, placeId: place.placeId || "" });
+  const placeId = place?.placeId || "";
+  if (Number.isFinite(place?.lat) && Number.isFinite(place?.lng)) {
+    return mapsDirUrl(`${place.lat},${place.lng}`, { mode, placeId });
+  }
+  const dest = [place?.address, place?.title, place?.name].map((value) => String(value || "").trim()).find(Boolean);
+  if (!dest) return "";
+  return mapsDirUrl(dest, { mode, placeId });
 }
 
 export function googleMapsDirUrl(places, mode = getRouteMode(), { fromHere = false } = {}) {
@@ -310,20 +318,39 @@ export function googleMapsUrl(place) {
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 
-export function drawRoute(places) {
+export function drawRoute(places, hotels = []) {
   if (engine === "google") {
-    drawGoogleRoute(places);
+    drawGoogleRoute(places, hotels);
     return;
   }
   if (!leafletMap || !leafletMarkers || !leafletRoute) return;
   leafletMarkers.clearLayers();
   leafletRoute.clearLayers();
 
-  const points = places
+  const dayPoints = (places || [])
     .filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng))
     .map((place) => [place.lat, place.lng]);
+  const hotelPoints = (hotels || [])
+    .filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng))
+    .map((hotel) => [hotel.lat, hotel.lng]);
 
-  places.forEach((place, index) => {
+  (hotels || []).forEach((hotel) => {
+    if (!Number.isFinite(hotel.lat) || !Number.isFinite(hotel.lng)) return;
+    const marker = L.marker([hotel.lat, hotel.lng], {
+      icon: hotelIcon(),
+      title: hotel.title || hotel.name || "숙소",
+      zIndexOffset: -10,
+    });
+    const here = googleMapsHereUrl(hotel);
+    marker.bindPopup(`
+      <strong>🏨 ${escapeHtml(hotel.title || hotel.name || "숙소")}</strong>
+      ${hotel.address ? `<br>${escapeHtml(hotel.address)}` : ""}
+      ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
+    `);
+    leafletMarkers.addLayer(marker);
+  });
+
+  (places || []).forEach((place, index) => {
     if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return;
     const marker = L.marker([place.lat, place.lng], {
       icon: numberedIcon(index + 1),
@@ -338,9 +365,9 @@ export function drawRoute(places) {
     leafletMarkers.addLayer(marker);
   });
 
-  if (points.length >= 2) {
+  if (dayPoints.length >= 2) {
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#007aff";
-    L.polyline(points, {
+    L.polyline(dayPoints, {
       color: accent,
       weight: 4,
       opacity: 0.9,
@@ -349,17 +376,19 @@ export function drawRoute(places) {
     }).addTo(leafletRoute);
   }
 
-  if (points.length === 1) {
-    leafletMap.setView(points[0], 15);
-  } else if (points.length > 1) {
-    leafletMap.fitBounds(points, { paddingTopLeft: [48, 80], paddingBottomRight: [48, 170], maxZoom: 16 });
+  const allPoints = [...dayPoints, ...hotelPoints];
+  if (allPoints.length === 1) {
+    leafletMap.setView(allPoints[0], 15);
+  } else if (allPoints.length > 1) {
+    leafletMap.fitBounds(allPoints, { paddingTopLeft: [48, 80], paddingBottomRight: [48, 170], maxZoom: 16 });
   }
   window.setTimeout(() => leafletMap.invalidateSize(), 60);
 }
 
-async function drawGoogleRoute(places) {
+async function drawGoogleRoute(places, hotels = []) {
   if (!googleMap) return;
-  lastGooglePlaces = places;
+  lastGooglePlaces = places || [];
+  lastGoogleHotels = hotels || [];
   googleMarkers.forEach((marker) => marker.setMap?.(null));
   googleMarkers = [];
   googleLine?.setMap(null);
@@ -367,17 +396,50 @@ async function drawGoogleRoute(places) {
   googleRenderer?.setMap(null);
   googleInfo?.close?.();
 
-  const points = places
+  const dayPoints = lastGooglePlaces
     .filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng))
     .map((place) => ({ lat: place.lat, lng: place.lng }));
+  const hotelPoints = lastGoogleHotels
+    .filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng))
+    .map((hotel) => ({ lat: hotel.lat, lng: hotel.lng }));
   const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#007aff";
+  const hotelColor = getComputedStyle(document.documentElement).getPropertyValue("--accent-2").trim() || "#32c9c9";
 
-  places.forEach((place, index) => {
+  lastGoogleHotels.forEach((hotel) => {
+    if (!Number.isFinite(hotel.lat) || !Number.isFinite(hotel.lng)) return;
+    const marker = new google.maps.Marker({
+      map: googleMap,
+      position: { lat: hotel.lat, lng: hotel.lng },
+      title: hotel.title || hotel.name || "숙소",
+      zIndex: 50,
+      label: {
+        text: "숙",
+        color: "#ffffff",
+        fontWeight: "700",
+        fontSize: "11px",
+      },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: hotelColor,
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+        scale: 12,
+      },
+    });
+    marker.addListener("click", () => {
+      flyToPlace(hotel);
+    });
+    googleMarkers.push(marker);
+  });
+
+  lastGooglePlaces.forEach((place, index) => {
     if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return;
     const marker = new google.maps.Marker({
       map: googleMap,
       position: { lat: place.lat, lng: place.lng },
       title: place.title || "장소",
+      zIndex: 80,
       label: {
         text: String(index + 1),
         color: "#ffffff",
@@ -399,13 +461,13 @@ async function drawGoogleRoute(places) {
     googleMarkers.push(marker);
   });
 
-  if (points.length >= 2) {
+  if (dayPoints.length >= 2) {
     try {
-      await drawRoadRoute(points, accent);
+      await drawRoadRoute(dayPoints, accent);
     } catch (error) {
       console.warn("directions failed", error);
       googleLine = new google.maps.Polyline({
-        path: points,
+        path: dayPoints,
         geodesic: true,
         strokeColor: accent,
         strokeOpacity: 0.9,
@@ -415,12 +477,13 @@ async function drawGoogleRoute(places) {
     }
   }
 
-  if (points.length === 1) {
-    googleMap.setCenter(points[0]);
+  const allPoints = [...dayPoints, ...hotelPoints];
+  if (allPoints.length === 1) {
+    googleMap.setCenter(allPoints[0]);
     googleMap.setZoom(15);
-  } else if (points.length > 1) {
+  } else if (allPoints.length > 1) {
     const bounds = new google.maps.LatLngBounds();
-    points.forEach((point) => bounds.extend(point));
+    allPoints.forEach((point) => bounds.extend(point));
     googleMap.fitBounds(bounds, { top: 120, right: 40, bottom: 200, left: 40 });
   }
 }
@@ -594,6 +657,16 @@ function numberedIcon(n) {
     html: `<span>${n}</span>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
+    popupAnchor: [0, -16],
+  });
+}
+
+function hotelIcon() {
+  return L.divIcon({
+    className: "hotel-marker",
+    html: "<span>🏨</span>",
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
     popupAnchor: [0, -16],
   });
 }

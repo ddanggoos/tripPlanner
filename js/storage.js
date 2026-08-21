@@ -181,6 +181,23 @@ function normalizeBingo(raw = {}) {
   };
 }
 
+function normalizeHotel(hotel = {}) {
+  const lat = Number(hotel.lat);
+  const lng = Number(hotel.lng);
+  return {
+    id: hotel.id || uid("hotel"),
+    name: String(hotel.name || "").trim(),
+    checkIn: hotel.checkIn || "",
+    checkOut: hotel.checkOut || "",
+    address: String(hotel.address || "").trim(),
+    pnr: String(hotel.pnr || "").trim(),
+    note: String(hotel.note || "").trim(),
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    placeId: String(hotel.placeId || "").trim(),
+  };
+}
+
 function normalizeTrip(trip = {}) {
   const country = normalizeCountry(trip.country, trip.currency);
   const currency = normalizeCurrency(trip.currency || COUNTRIES.find((item) => item.code === country)?.currency);
@@ -196,7 +213,7 @@ function normalizeTrip(trip = {}) {
     shareId: trip.shareId || "",
     updatedAt: Number(trip.updatedAt) || 0,
     flights: Array.isArray(trip.flights) ? trip.flights : [],
-    hotels: Array.isArray(trip.hotels) ? trip.hotels : [],
+    hotels: Array.isArray(trip.hotels) ? trip.hotels.map(normalizeHotel) : [],
     places: Array.isArray(trip.places) ? trip.places : [],
     bingo: normalizeBingo(trip.bingo),
     checklist: normalizeChecklist(trip.checklist),

@@ -1082,6 +1082,18 @@ a.more-row {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
+.hotel-marker span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  font-size: 18px;
+  line-height: 1;
+}
+
 .sheet-results {
   max-height: 180px;
 }
