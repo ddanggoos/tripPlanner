@@ -70,7 +70,23 @@ function normalizeChecklist(raw = {}) {
   };
 }
 
-export function normalizeTrip(trip = {}) {
+function normalizeShop(raw = {}) {
+  const source = Array.isArray(raw.items) ? raw.items : [];
+  return {
+    items: source.map((item, index) => ({
+      id: item.id || uid("shop"),
+      title: String(item.title || `상품 ${index + 1}`).trim() || `상품 ${index + 1}`,
+      price: String(item.price || "").trim(),
+      image: looksLikeStoredImage(item.image) ? item.image : "",
+    })),
+  };
+}
+
+function looksLikeStoredImage(value) {
+  return typeof value === "string" && value.startsWith("data:image/") && value.length < 400000;
+}
+
+function normalizeTrip(trip = {}) {
   const bingo = trip.bingo || {};
   const items = Array.isArray(bingo.items) && bingo.items.length === 25
     ? bingo.items
@@ -92,6 +108,7 @@ export function normalizeTrip(trip = {}) {
       checked: Array.isArray(bingo.checked) ? bingo.checked : [],
     },
     checklist: normalizeChecklist(trip.checklist),
+    shop: normalizeShop(trip.shop),
   };
 }
 
