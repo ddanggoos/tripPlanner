@@ -15,7 +15,7 @@ import {
   setSyncHooks,
   DEFAULT_BINGO_ITEMS,
 } from "./storage.js";
-import { initMap, drawRoute, destroyMap, searchPlaces, flyToPlace, googleMapsUrl } from "./map.js";
+import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl } from "./map.js";
 import { renderBingo, bindBingo, completedLines } from "./bingo.js";
 import { APP_VERSION } from "./version.js";
 import {
@@ -547,7 +547,7 @@ function renderPlan(trip, date) {
 function routeStrip(places) {
   const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
   if (!pinned.length) {
-    return `<p class="map-hint">📍 지도를 누르거나 구글맵 링크를 붙여 장소를 추가하세요.</p>`;
+    return `<p class="map-hint">📍 지도를 누르거나 장소 이름·구글맵 링크로 추가하세요.</p>`;
   }
   return `
     <div class="route-strip" role="list">
@@ -583,7 +583,7 @@ function renderMapTab(trip, date) {
         <div class="map-tools">
           ${dayChips(trip, selected, `#/trip/${trip.id}/map`)}
           <form class="search-form" data-form="search">
-            <input type="search" name="q" placeholder="🔍 장소 이름 또는 구글맵 링크" enterkeyhint="search" autocomplete="off">
+            <input type="search" name="q" placeholder="🔍 식당, 명소, 구글맵 링크" enterkeyhint="search" autocomplete="off">
           </form>
           <div class="search-results" hidden></div>
         </div>
@@ -595,57 +595,38 @@ function renderMapTab(trip, date) {
   `;
   const mapEl = document.getElementById("map");
   if (selected) {
-    initMap(mapEl, {
-      onClick: (latlng) => openPlaceSheet(trip, {
-        date: selected,
-        lat: latlng.lat,
-        lng: latlng.lng,
-      }),
-    });
-    drawRoute(places);
+    void (async () => {
+      await initMap(mapEl, {
+        onClick: (spot) => openPlaceSheet(trip, {
+          date: selected,
+          title: spot.title || "",
+          lat: spot.lat,
+          lng: spot.lng,
+          placeId: spot.placeId || "",
+        }),
+      });
+      if (!document.body.contains(mapEl)) return;
+      drawRoute(places);
+    })();
   } else {
     destroyMap();
     mapEl.classList.add("is-empty");
     mapEl.innerHTML = `<div class="empty"><span class="empty-icon">🗓️</span>날짜를 먼저 저장하세요.</div>`;
   }
 
-  const form = app.querySelector("[data-form='search']");
-  const resultsEl = app.querySelector(".search-results");
-  form?.querySelector("input")?.addEventListener("input", (event) => {
-    window.clearTimeout(searchTimer);
-    const q = event.target.value;
-    searchTimer = window.setTimeout(async () => {
-      if (!q.trim()) {
-        resultsEl.hidden = true;
-        resultsEl.innerHTML = "";
-        return;
-      }
-      try {
-        const results = await searchPlaces(q);
-        resultsEl.hidden = !results.length;
-        resultsEl.innerHTML = results.map((item, index) => `
-          <button type="button" class="search-item" data-search-index="${index}">
-            <strong>📍 ${escapeHtml(item.title)}</strong>
-            <span>${escapeHtml(item.label)}</span>
-          </button>
-        `).join("");
-        resultsEl.querySelectorAll("[data-search-index]").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const item = results[Number(btn.dataset.searchIndex)];
-            resultsEl.hidden = true;
-            form.querySelector("input").value = "";
-            openPlaceSheet(trip, {
-              date: selected,
-              title: item.title,
-              lat: item.lat,
-              lng: item.lng,
-            });
-          });
-        });
-      } catch (error) {
-        toast(error.message || "검색에 실패했습니다.");
-      }
-    }, 350);
+  bindPlaceSearch(app, {
+    input: app.querySelector("[data-form='search'] input"),
+    results: app.querySelector(".search-results"),
+    onPick: (item) => {
+      app.querySelector("[data-form='search'] input").value = "";
+      openPlaceSheet(trip, {
+        date: selected,
+        title: item.title,
+        lat: item.lat,
+        lng: item.lng,
+        placeId: item.placeId || "",
+      });
+    },
   });
 }
 
@@ -809,6 +790,55 @@ function hotelForm(hotel = {}) {
   `;
 }
 
+function bindPlaceSearch(root, { input, results, onPick }) {
+  if (!input || !results) return;
+  input.addEventListener("input", (event) => {
+    window.clearTimeout(searchTimer);
+    const q = event.target.value;
+    searchTimer = window.setTimeout(async () => {
+      if (!q.trim()) {
+        results.hidden = true;
+        results.innerHTML = "";
+        return;
+      }
+      try {
+        const items = await searchPlaces(q);
+        results.hidden = !items.length;
+        results.innerHTML = items.map((item, index) => `
+          <button type="button" class="search-item" data-search-index="${index}">
+            <strong>📍 ${escapeHtml(item.title)}</strong>
+            <span>${escapeHtml(item.label || "")}</span>
+          </button>
+        `).join("");
+        results.querySelectorAll("[data-search-index]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            try {
+              const item = await resolvePlace(items[Number(btn.dataset.searchIndex)]);
+              results.hidden = true;
+              results.innerHTML = "";
+              onPick?.(item);
+            } catch (error) {
+              toast(error.message || "장소를 불러오지 못했습니다.");
+            }
+          });
+        });
+      } catch (error) {
+        toast(error.message || "검색에 실패했습니다.");
+      }
+    }, 280);
+  });
+}
+
+function placeGeoHint(place = {}) {
+  if (Number.isFinite(place.lat) && Number.isFinite(place.lng)) {
+    return `
+      <p class="hint" data-place-geo>📍 위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>
+      <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener noreferrer">🧭 구글 지도에서 보기</a>
+    `;
+  }
+  return `<p class="hint" data-place-geo>📍 장소 이름·구글맵 링크로 찾거나 지도 탭에서 찍어 보세요.</p>`;
+}
+
 function placeForm(place = {}) {
   return `
     <form class="stack-form" data-form="place">
@@ -816,6 +846,11 @@ function placeForm(place = {}) {
       <input type="hidden" name="date" value="${place.date || ""}">
       <input type="hidden" name="lat" value="${place.lat ?? ""}">
       <input type="hidden" name="lng" value="${place.lng ?? ""}">
+      <input type="hidden" name="placeId" value="${escapeHtml(place.placeId || "")}">
+      <label>구글에서 찾기
+        <input type="search" name="lookup" data-place-lookup placeholder="식당, 명소, 주소, 구글맵 링크" enterkeyhint="search" autocomplete="off">
+      </label>
+      <div class="search-results sheet-results" data-place-suggest hidden></div>
       <label>장소 이름
         <input type="text" name="title" value="${escapeHtml(place.title || "")}" required placeholder="도톤보리">
       </label>
@@ -825,20 +860,35 @@ function placeForm(place = {}) {
       <label>메모
         <textarea name="note" rows="2">${escapeHtml(place.note || "")}</textarea>
       </label>
-      ${Number.isFinite(place.lat) ? `
-        <p class="hint">📍 위치 ${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}</p>
-        <a class="text-btn google-link" href="${googleMapsUrl(place)}" target="_blank" rel="noopener noreferrer">🧭 구글 지도에서 보기</a>
-      ` : `<p class="hint">📍 위치는 지도 탭에서 찍거나 구글맵 링크를 붙여 넣을 수 있어요.</p>`}
+      <div data-place-meta>${placeGeoHint(place)}</div>
       <button type="submit" class="primary-btn">저장</button>
     </form>
   `;
 }
 
+function fillPlaceFields(form, item) {
+  if (!form || !item) return;
+  if (item.title) form.querySelector("[name='title']").value = item.title;
+  if (Number.isFinite(item.lat)) form.querySelector("[name='lat']").value = item.lat;
+  if (Number.isFinite(item.lng)) form.querySelector("[name='lng']").value = item.lng;
+  if (item.placeId) form.querySelector("[name='placeId']").value = item.placeId;
+  const lookup = form.querySelector("[name='lookup']");
+  if (lookup) lookup.value = "";
+  const meta = form.querySelector("[data-place-meta]");
+  if (meta) meta.innerHTML = placeGeoHint(item);
+}
+
 function openPlaceSheet(trip, defaults) {
   const sheet = openSheet(defaults.id ? "📍 장소 수정" : "📍 장소 추가", placeForm(defaults));
-  sheet.querySelector("form").addEventListener("submit", (event) => {
+  const form = sheet.querySelector("form");
+  form.addEventListener("submit", (event) => {
     event.preventDefault();
     savePlace(trip, new FormData(event.target));
+  });
+  bindPlaceSearch(sheet, {
+    input: sheet.querySelector("[data-place-lookup]"),
+    results: sheet.querySelector("[data-place-suggest]"),
+    onPick: (item) => fillPlaceFields(form, item),
   });
 }
 
@@ -853,6 +903,7 @@ function savePlace(trip, formData) {
   const lngRaw = formData.get("lng");
   const lat = latRaw === "" ? null : Number(latRaw);
   const lng = lngRaw === "" ? null : Number(lngRaw);
+  const placeId = String(formData.get("placeId") || "").trim();
   if (existingId) {
     const place = trip.places.find((item) => item.id === existingId);
     if (!place) return;
@@ -864,6 +915,7 @@ function savePlace(trip, formData) {
       place.lat = lat;
       place.lng = lng;
     }
+    if (placeId) place.placeId = placeId;
   } else {
     const order = placesForDate(trip, date).length + 1;
     trip.places.push({
@@ -875,6 +927,7 @@ function savePlace(trip, formData) {
       note: String(formData.get("note") || "").trim(),
       lat: Number.isFinite(lat) ? lat : null,
       lng: Number.isFinite(lng) ? lng : null,
+      placeId: placeId || "",
     });
   }
   upsertTrip(trip);
