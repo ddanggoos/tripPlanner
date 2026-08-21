@@ -18,34 +18,6 @@ export const DEFAULT_CHECKLIST_ITEMS = [
   "집 정리(가스·창문)",
 ];
 
-export const DEFAULT_BINGO_ITEMS = [
-  "현지 아침",
-  "길거리 음식",
-  "로컬 커피",
-  "해산물",
-  "디저트",
-  "면 요리",
-  "야시장",
-  "전통 과자",
-  "맥주/하이볼",
-  "제철 과일",
-  "분식",
-  "고기 요리",
-  "채식 한 끼",
-  "편의점 간식",
-  "베이커리",
-  "매운 음식",
-  "국물 요리",
-  "아이스크림",
-  "와인/사케",
-  "브런치",
-  "현지 특산",
-  "카페 시그니처",
-  "야식",
-  "기념 디저트",
-  "마지막 만찬",
-];
-
 let state = { trips: [] };
 let seed = { trips: [] };
 
@@ -86,11 +58,29 @@ function looksLikeStoredImage(value) {
   return typeof value === "string" && value.startsWith("data:image/") && value.length < 400000;
 }
 
+function normalizeBingo(raw = {}) {
+  const count = 25;
+  const sourceItems = Array.isArray(raw.items) ? raw.items : [];
+  const items = Array.from({ length: count }, (_, index) => String(sourceItems[index] || "").trim());
+  const sourcePhotos = Array.isArray(raw.photos) ? raw.photos : [];
+  const photos = Array.from({ length: count }, (_, index) => (
+    looksLikeStoredImage(sourcePhotos[index]) ? sourcePhotos[index] : ""
+  ));
+  const checked = Array.isArray(raw.checked)
+    ? [...new Set(raw.checked.map((value) => Number(value)).filter((index) => Number.isInteger(index) && index >= 0 && index < count))].sort((a, b) => a - b)
+    : [];
+  const filled = items.every(Boolean);
+  const locked = raw.locked === true || (raw.locked !== false && filled && checked.length > 0);
+  return {
+    size: 5,
+    items,
+    photos,
+    checked,
+    locked,
+  };
+}
+
 function normalizeTrip(trip = {}) {
-  const bingo = trip.bingo || {};
-  const items = Array.isArray(bingo.items) && bingo.items.length === 25
-    ? bingo.items
-    : [...DEFAULT_BINGO_ITEMS];
   return {
     id: trip.id || uid("trip"),
     name: trip.name || "새 여행",
@@ -102,11 +92,7 @@ function normalizeTrip(trip = {}) {
     flights: Array.isArray(trip.flights) ? trip.flights : [],
     hotels: Array.isArray(trip.hotels) ? trip.hotels : [],
     places: Array.isArray(trip.places) ? trip.places : [],
-    bingo: {
-      size: 5,
-      items,
-      checked: Array.isArray(bingo.checked) ? bingo.checked : [],
-    },
+    bingo: normalizeBingo(trip.bingo),
     checklist: normalizeChecklist(trip.checklist),
     shop: normalizeShop(trip.shop),
   };
