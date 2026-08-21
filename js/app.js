@@ -164,6 +164,13 @@ function openSheet(title, bodyHtml) {
     <div class="sheet-body">${bodyHtml}</div>
   `;
   sheet.querySelector("[data-close-sheet]").addEventListener("click", closeSheet);
+  sheet.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    window.setTimeout(() => {
+      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }, 80);
+  });
   overlayRoot().append(backdrop, sheet);
   requestAnimationFrame(() => {
     backdrop.classList.add("is-open");
