@@ -20,6 +20,7 @@ import {
 import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl, googleMapsHereUrl } from "./map.js";
 import { renderBingo, bindBingo, completedLines } from "./bingo.js";
 import { renderChecklist, checklistProgress } from "./checklist.js";
+import { renderShop, compressShopImage, looksLikeImageData, shopEmojiMap } from "./shop.js";
 import { APP_VERSION } from "./version.js";
 import {
   initSync,
@@ -185,6 +186,8 @@ function selectedDateFor(trip, fallback) {
 function closeSheet() {
   document.querySelector(".sheet")?.remove();
   document.querySelector(".sheet-backdrop")?.remove();
+  document.querySelector(".photo-modal")?.remove();
+  document.querySelector(".photo-backdrop")?.remove();
 }
 
 function openSheet(title, bodyHtml) {
@@ -473,7 +476,7 @@ function renderHome() {
 }
 
 function tabbar(trip, tab) {
-  const moreOn = tab === "more" || tab === "bingo" || tab === "checklist";
+  const moreOn = tab === "more" || tab === "bingo" || tab === "checklist" || tab === "shop";
   const items = [
     ["info", "정보", "📋", "#/trip/" + trip.id, tab === "info"],
     ["plan", "일정", "🗓️", `#/trip/${trip.id}/plan`, tab === "plan"],
@@ -806,6 +809,13 @@ function renderMore(trip) {
             <span class="meta">${total ? `${done}/${total} 완료` : "준비 항목을 만들어 보세요"}</span>
           </span>
         </a>
+        <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/shop">
+          <span class="more-icon" aria-hidden="true">🛍️</span>
+          <span class="more-copy">
+            <strong>쇼핑 리스트</strong>
+            <span class="meta">${(trip.shop?.items || []).length ? `${trip.shop.items.length}개` : "사고 싶은 걸 모아 보세요"}</span>
+          </span>
+        </a>
         <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/bingo">
           <span class="more-icon" aria-hidden="true">🍽️</span>
           <span class="more-copy">
@@ -836,6 +846,116 @@ function renderChecklistTab(trip) {
       ${tabbar(trip, "checklist")}
     </div>
   `;
+}
+
+function renderShopTab(trip) {
+  destroyMap();
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          <div class="topbar-title"><h1>🛍️ 쇼핑</h1></div>
+          <button type="button" class="text-btn" data-action="add-shop" data-id="${trip.id}">추가</button>
+        </div>
+      </header>
+      <main class="content has-tabbar">
+        ${renderShop(trip)}
+      </main>
+      ${tabbar(trip, "shop")}
+    </div>
+  `;
+}
+
+function shopPreviewHtml(image) {
+  if (looksLikeImageData(image)) return `<img src="${image}" alt="">`;
+  return `<span class="shop-preview-empty">사진 없음 · 이모지로 보여요</span>`;
+}
+
+function openShopForm(trip, item = {}) {
+  const sheet = openSheet(item.id ? "🛍️ 상품 수정" : "🛍️ 상품 추가", `
+    <form class="stack-form" data-form="shop" data-id="${trip.id}">
+      <input type="hidden" name="id" value="${item.id || ""}">
+      <input type="hidden" name="image" value="">
+      <label>상품명
+        <input type="text" name="title" required maxlength="40" value="${escapeHtml(item.title || "")}" placeholder="예: 키링">
+      </label>
+      <label>가격
+        <input type="text" name="price" maxlength="24" value="${escapeHtml(item.price || "")}" placeholder="선택 · 예: 1,200엔">
+      </label>
+      <label>참고 이미지
+        <input type="file" accept="image/*" data-shop-file>
+      </label>
+      <p class="hint">없어도 돼요. JPG·PNG가 잘 들어갑니다.</p>
+      <div class="shop-preview" data-shop-preview>${shopPreviewHtml(item.image)}</div>
+      <button type="button" class="text-btn" data-shop-clear ${looksLikeImageData(item.image) ? "" : "hidden"}>이미지 빼기</button>
+      <button type="submit" class="primary-btn">저장</button>
+    </form>
+  `);
+  sheet.querySelector("form")?.addEventListener("submit", (submitEvent) => {
+    submitEvent.preventDefault();
+    const current = getTrip(trip.id);
+    if (current) saveShop(current, new FormData(submitEvent.target));
+  });
+  const imageInput = sheet.querySelector("[name='image']");
+  const preview = sheet.querySelector("[data-shop-preview]");
+  const clearBtn = sheet.querySelector("[data-shop-clear]");
+  if (looksLikeImageData(item.image)) imageInput.value = item.image;
+  sheet.querySelector("[name='title']")?.focus();
+  sheet.querySelector("[data-shop-file]")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      toast("이미지를 줄이는 중...");
+      const data = await compressShopImage(file);
+      imageInput.value = data;
+      preview.innerHTML = `<img src="${data}" alt="">`;
+      clearBtn.hidden = false;
+    } catch (error) {
+      toast(error.message || "이미지를 넣지 못했습니다.");
+    }
+  });
+  clearBtn?.addEventListener("click", () => {
+    imageInput.value = "";
+    preview.innerHTML = shopPreviewHtml("");
+    clearBtn.hidden = true;
+  });
+}
+
+function openShopPhoto(trip, item) {
+  closeSheet();
+  const emojis = shopEmojiMap(trip.shop?.items || []);
+  const backdrop = document.createElement("div");
+  backdrop.className = "photo-backdrop";
+  backdrop.addEventListener("click", closeSheet);
+  const modal = document.createElement("div");
+  modal.className = "photo-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-label", item.title || "상품");
+  const hasImage = looksLikeImageData(item.image);
+  modal.innerHTML = `
+    <button type="button" class="photo-close" data-close-sheet aria-label="닫기">닫기</button>
+    ${hasImage
+      ? `<img class="photo-hero" alt="${escapeHtml(item.title)}" src="${item.image}">`
+      : `<div class="photo-emoji" aria-hidden="true">${emojis[item.id] || "🛍️"}</div>`}
+    <h2>${escapeHtml(item.title)}</h2>
+    <p class="photo-price ${item.price ? "" : "is-empty"}">${item.price ? escapeHtml(item.price) : "가격 미정"}</p>
+    <div class="card-actions photo-actions">
+      <button type="button" class="ghost-btn" data-action="edit-shop" data-id="${trip.id}" data-item="${item.id}">수정</button>
+      <button type="button" class="ghost-btn danger" data-action="delete-shop" data-id="${trip.id}" data-item="${item.id}">삭제</button>
+    </div>
+  `;
+  modal.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (event.target.closest("[data-action]")) onClick(event);
+  });
+  modal.querySelector("[data-close-sheet]")?.addEventListener("click", closeSheet);
+  overlayRoot().append(backdrop, modal);
+  requestAnimationFrame(() => {
+    backdrop.classList.add("is-open");
+    modal.classList.add("is-open");
+  });
 }
 
 function renderBingoTab(trip) {
@@ -1171,6 +1291,7 @@ function render() {
     else if (route.tab === "map") renderMapTab(trip, dateParam);
     else if (route.tab === "bingo") renderBingoTab(trip);
     else if (route.tab === "checklist") renderChecklistTab(trip);
+    else if (route.tab === "shop") renderShopTab(trip);
     else if (route.tab === "more") renderMore(trip);
     else renderInfo(trip);
     return;
@@ -1335,6 +1456,32 @@ function onClick(event) {
     render();
     return;
   }
+  if (action === "add-shop" && trip) {
+    openShopForm(trip);
+    return;
+  }
+  if (action === "open-shop" && trip) {
+    const item = (trip.shop?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (item) openShopPhoto(trip, item);
+    return;
+  }
+  if (action === "edit-shop" && trip) {
+    const item = (trip.shop?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (item) openShopForm(trip, item);
+    return;
+  }
+  if (action === "delete-shop" && trip) {
+    openConfirmSheet({
+      title: "상품 삭제",
+      message: "이 상품을 지울까요?",
+      onConfirm: () => {
+        trip.shop.items = (trip.shop?.items || []).filter((entry) => entry.id !== btn.dataset.item);
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
   if (action === "add-check" && trip) {
     openPromptSheet({
       title: "체크 항목 추가",
@@ -1430,6 +1577,27 @@ function saveFlight(trip, data) {
   const index = trip.flights.findIndex((item) => item.id === payload.id);
   if (index >= 0) trip.flights[index] = payload;
   else trip.flights.push(payload);
+  upsertTrip(trip);
+  closeSheet();
+  render();
+}
+
+function saveShop(trip, data) {
+  const title = String(data.get("title") || "").trim();
+  if (!title) {
+    toast("상품명을 적어 주세요.");
+    return;
+  }
+  const payload = {
+    id: String(data.get("id") || "") || uid("shop"),
+    title,
+    price: String(data.get("price") || "").trim(),
+    image: looksLikeImageData(String(data.get("image") || "")) ? String(data.get("image")) : "",
+  };
+  trip.shop = trip.shop || { items: [] };
+  const index = trip.shop.items.findIndex((item) => item.id === payload.id);
+  if (index >= 0) trip.shop.items[index] = payload;
+  else trip.shop.items.push(payload);
   upsertTrip(trip);
   closeSheet();
   render();
