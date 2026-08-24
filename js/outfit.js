@@ -58,10 +58,11 @@ function loadOutfitViews() {
 
 export function getOutfitView(tripId) {
   const raw = loadOutfitViews()[tripId] || {};
+  const folderId = String(raw.folderId || "");
   return {
     mode: raw.mode === "all" ? "all" : "folders",
-    folderOpen: Boolean(raw.folderOpen),
-    folderId: String(raw.folderId || ""),
+    folderOpen: Boolean(raw.folderOpen && folderId),
+    folderId,
   };
 }
 
@@ -127,72 +128,77 @@ export function parseOutfitFolderField(data, trip) {
   return (trip.outfits?.folders || []).some((folder) => folder.id === folderId) ? folderId : "";
 }
 
-function outfitTilesHtml(trip, items, emptyText) {
-  const emojis = outfitEmojiMap(trip.outfits?.items || []);
-  if (!items.length) {
-    return `<div class="empty compact shop-empty"><span class="empty-icon">👗</span>${emptyText}</div>`;
-  }
+function outfitItemTile(trip, item, emojis) {
+  const hasImage = looksLikeImageData(item.image);
   return `
-    <div class="shop-grid">
-      ${items.map((item) => {
-        const hasImage = looksLikeImageData(item.image);
-        return `
-          <button type="button" class="shop-tile tint-${hasImage ? "photo" : hashId(item.id) % 8}" data-action="open-outfit" data-id="${trip.id}" data-item="${item.id}" aria-label="${escapeHtml(item.title)}">
-            ${hasImage
-              ? `<img src="${item.image}" alt="" class="shop-thumb">`
-              : `<span class="shop-emoji" aria-hidden="true">${emojis[item.id] || "👗"}</span>`}
-            <span class="shop-tile-name"><span class="shop-tile-copy">${escapeHtml(item.title)}</span></span>
-          </button>
-        `;
-      }).join("")}
-    </div>
+    <button type="button" class="shop-tile tint-${hasImage ? "photo" : hashId(item.id) % 8}" data-action="open-outfit" data-id="${trip.id}" data-item="${item.id}" aria-label="${escapeHtml(item.title)}">
+      ${hasImage
+        ? `<img src="${item.image}" alt="" class="shop-thumb">`
+        : `<span class="shop-emoji" aria-hidden="true">${emojis[item.id] || "👗"}</span>`}
+      <span class="shop-tile-name"><span class="shop-tile-copy">${escapeHtml(item.title)}</span></span>
+    </button>
   `;
 }
 
-function folderListHtml(trip) {
-  const folders = trip.outfits?.folders || [];
-  const noneCount = itemsInOutfitFolder(trip, "").length;
-  const rows = [
-    `
-      <article class="folder-row">
-        <button type="button" class="folder-main" data-action="outfit-open-folder" data-id="${trip.id}" data-folder="">
-          <span class="folder-icon" aria-hidden="true">📂</span>
-          <span class="folder-copy">
-            <strong>분류 없음</strong>
-            <span class="meta">${noneCount}개</span>
-          </span>
-        </button>
-      </article>
-    `,
-    ...folders.map((folder) => {
-      const count = itemsInOutfitFolder(trip, folder.id).length;
-      return `
-        <article class="folder-row">
-          <button type="button" class="folder-main" data-action="outfit-open-folder" data-id="${trip.id}" data-folder="${escapeHtml(folder.id)}">
-            <span class="folder-icon" aria-hidden="true">👗</span>
-            <span class="folder-copy">
-              <strong>${escapeHtml(folder.name)}</strong>
-              <span class="meta">${count}개</span>
-            </span>
-          </button>
-          <button type="button" class="icon-btn" data-action="rename-outfit-folder" data-id="${trip.id}" data-folder="${escapeHtml(folder.id)}" aria-label="이름 바꾸기">이름</button>
-          <button type="button" class="icon-btn danger" data-action="delete-outfit-folder" data-id="${trip.id}" data-folder="${escapeHtml(folder.id)}" aria-label="삭제">삭제</button>
-        </article>
-      `;
-    }),
-  ];
+function outfitFolderTile(trip, folder) {
+  const items = itemsInOutfitFolder(trip, folder.id);
+  const cover = items.find((item) => looksLikeImageData(item.image));
   return `
-    <div class="folder-list">
-      ${rows.join("")}
-    </div>
+    <button type="button" class="shop-tile ${cover ? "tint-photo" : "tint-folder"} is-folder" data-action="outfit-open-folder" data-id="${trip.id}" data-folder="${escapeHtml(folder.id)}" aria-label="${escapeHtml(folder.name)} 폴더, ${items.length}개">
+      ${cover
+        ? `<img src="${cover.image}" alt="" class="shop-thumb">`
+        : `<span class="shop-emoji" aria-hidden="true">📁</span>`}
+      <span class="folder-mark" aria-hidden="true">📁</span>
+      <span class="shop-tile-name">
+        <span class="shop-tile-copy">${escapeHtml(folder.name)}</span>
+        <span class="shop-tile-count">${items.length}개</span>
+      </span>
+    </button>
   `;
+}
+
+function outfitUpTile(trip) {
+  return `
+    <button type="button" class="shop-tile tint-up is-up" data-action="outfit-close-folder" data-id="${trip.id}" aria-label="상위 폴더">
+      <span class="shop-emoji" aria-hidden="true">↩️</span>
+      <span class="shop-tile-name"><span class="shop-tile-copy">상위 폴더</span></span>
+    </button>
+  `;
+}
+
+function outfitGridHtml(tiles, emptyText) {
+  if (!tiles.length) {
+    return `<div class="empty compact shop-empty"><span class="empty-icon">👗</span>${emptyText}</div>`;
+  }
+  return `<div class="shop-grid">${tiles.join("")}</div>`;
+}
+
+function rootFolderGridHtml(trip) {
+  const emojis = outfitEmojiMap(trip.outfits?.items || []);
+  const folders = trip.outfits?.folders || [];
+  const loose = itemsInOutfitFolder(trip, "");
+  const tiles = [
+    ...folders.map((folder) => outfitFolderTile(trip, folder)),
+    ...loose.map((item) => outfitItemTile(trip, item, emojis)),
+  ];
+  return outfitGridHtml(tiles, "폴더를 만들거나 입을 옷을 올려 보세요.");
+}
+
+function openFolderGridHtml(trip, folderId) {
+  const emojis = outfitEmojiMap(trip.outfits?.items || []);
+  const items = itemsInOutfitFolder(trip, folderId);
+  const tiles = [
+    outfitUpTile(trip),
+    ...items.map((item) => outfitItemTile(trip, item, emojis)),
+  ];
+  return outfitGridHtml(tiles, "");
 }
 
 function outfitToolbarHtml(trip, view) {
   const mode = view.mode === "all" ? "all" : "folders";
   const folders = new Set((trip.outfits?.folders || []).map((folder) => folder.id));
-  const folderOpen = mode === "folders" && view.folderOpen;
   const folderId = folders.has(view.folderId) ? view.folderId : "";
+  const folderOpen = mode === "folders" && view.folderOpen && Boolean(folderId);
   return `
     <div class="seg" role="tablist" aria-label="코디 보기">
       <button type="button" class="seg-btn ${mode === "folders" ? "is-active" : ""}" data-action="outfit-mode" data-id="${trip.id}" data-mode="folders">폴더로 보기</button>
@@ -205,12 +211,9 @@ function outfitToolbarHtml(trip, view) {
     ` : ""}
     ${mode === "folders" && folderOpen ? `
       <div class="shop-nav">
-        <button type="button" class="text-btn" data-action="outfit-close-folder" data-id="${trip.id}">← 폴더</button>
         <strong class="shop-nav-title">${escapeHtml(outfitFolderName(trip, folderId))}</strong>
-        ${folderId ? `
-          <button type="button" class="text-btn" data-action="rename-outfit-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">이름</button>
-          <button type="button" class="text-btn danger-text" data-action="delete-outfit-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">삭제</button>
-        ` : ""}
+        <button type="button" class="text-btn" data-action="rename-outfit-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">이름</button>
+        <button type="button" class="text-btn danger-text" data-action="delete-outfit-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">삭제</button>
       </div>
     ` : ""}
   `;
@@ -219,16 +222,19 @@ function outfitToolbarHtml(trip, view) {
 export function renderOutfit(trip) {
   const view = getOutfitView(trip.id);
   const folders = new Set((trip.outfits?.folders || []).map((folder) => folder.id));
-  const folderList = view.mode !== "all" && !view.folderOpen;
+  const folderOpen = view.mode === "folders" && view.folderOpen && folders.has(view.folderId);
   const items = visibleOutfitItems(trip, view);
   let body = "";
-  if (folderList) {
-    body = folderListHtml(trip);
+  if (view.mode === "folders" && !folderOpen) {
+    body = rootFolderGridHtml(trip);
   } else if (view.mode === "folders") {
-    const folderId = folders.has(view.folderId) ? view.folderId : "";
-    body = outfitTilesHtml(trip, items, folderId ? "이 폴더가 비어 있어요." : "분류 없는 코디가 없어요.");
+    body = openFolderGridHtml(trip, view.folderId);
   } else {
-    body = outfitTilesHtml(trip, items, "입을 옷을 사진으로 올려 보세요.");
+    const emojis = outfitEmojiMap(trip.outfits?.items || []);
+    body = outfitGridHtml(
+      items.map((item) => outfitItemTile(trip, item, emojis)),
+      "입을 옷을 사진으로 올려 보세요."
+    );
   }
   return `
     <section class="shop-wrap">
