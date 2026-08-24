@@ -35,6 +35,17 @@ import {
   takeShopTagsFromForm,
   shopItemMeta,
 } from "./shop.js";
+import {
+  renderOutfit,
+  outfitProgress,
+  getOutfitView,
+  setOutfitView,
+  outfitDefaultsFromView,
+  outfitFolderFieldHtml,
+  parseOutfitFolderField,
+  outfitEmojiMap,
+  outfitFolderName,
+} from "./outfit.js";
 import { renderLedger, setLedgerView, getLedgerView } from "./ledger.js";
 import { TOGETHER_LABEL, peopleFieldHtml, bindPeopleField, parsePeopleField, prunePersonFromTrip, toggleFilterPerson } from "./people.js";
 import {
@@ -575,7 +586,7 @@ function renderHome() {
 }
 
 function tabbar(trip, tab) {
-  const moreOn = tab === "more" || tab === "bingo" || tab === "checklist" || tab === "shop" || tab === "ledger";
+  const moreOn = tab === "more" || tab === "bingo" || tab === "checklist" || tab === "shop" || tab === "outfit" || tab === "ledger";
   const items = [
     ["info", "정보", "📋", "#/trip/" + trip.id, tab === "info"],
     ["plan", "일정", "🗓️", `#/trip/${trip.id}/plan`, tab === "plan"],
@@ -964,6 +975,7 @@ function renderMore(trip) {
   destroyMap();
   const { done, total } = checklistProgress(trip);
   const shop = shopProgress(trip);
+  const outfits = outfitProgress(trip);
   const bingoLabel = bingoStatus(trip.bingo);
   app.innerHTML = `
     <div class="screen trip-screen">
@@ -987,6 +999,13 @@ function renderMore(trip) {
           <span class="more-copy">
             <strong>쇼핑 리스트</strong>
             <span class="meta">${shop.total ? `${shop.bought}/${shop.total} 구매 완료` : "사고 싶은 걸 모아 보세요"}</span>
+          </span>
+        </a>
+        <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/outfit">
+          <span class="more-icon" aria-hidden="true">👗</span>
+          <span class="more-copy">
+            <strong>여행가서 뭐입지</strong>
+            <span class="meta">${outfits.total ? `${outfits.total}개 코디` : "입을 옷을 사진으로 모아 보세요"}</span>
           </span>
         </a>
         <a class="more-row" href="#/trip/${encodeURIComponent(trip.id)}/ledger">
@@ -1064,6 +1083,25 @@ function renderLedgerTab(trip) {
         ${renderLedger(trip)}
       </main>
       ${tabbar(trip, "ledger")}
+    </div>
+  `;
+}
+
+function renderOutfitTab(trip) {
+  destroyMap();
+  app.innerHTML = `
+    <div class="screen trip-screen">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          <div class="topbar-title"><h1>👗 뭐입지</h1></div>
+          <button type="button" class="text-btn" data-action="add-outfit" data-id="${trip.id}">추가</button>
+        </div>
+      </header>
+      <main class="content has-tabbar">
+        ${renderOutfit(trip)}
+      </main>
+      ${tabbar(trip, "outfit")}
     </div>
   `;
 }
@@ -1149,6 +1187,93 @@ function openShopForm(trip, item = {}, defaults = {}) {
     imageInput.value = "";
     preview.innerHTML = shopPreviewHtml("");
     clearBtn.hidden = true;
+  });
+}
+
+function openOutfitForm(trip, item = {}, defaults = {}) {
+  const folderId = item.id ? item.folderId : (defaults.folderId ?? "");
+  const sheet = openSheet(item.id ? "👗 코디 수정" : "👗 코디 추가", `
+    <form class="stack-form" data-form="outfit" data-id="${trip.id}">
+      <input type="hidden" name="id" value="${item.id || ""}">
+      <input type="hidden" name="image" value="">
+      <label>이름
+        <input type="text" name="title" required maxlength="40" value="${escapeHtml(item.title || "")}" placeholder="예: 첫째 날 저녁">
+      </label>
+      ${outfitFolderFieldHtml(trip, folderId)}
+      <label>사진
+        <input type="file" accept="image/*" data-outfit-file>
+      </label>
+      <p class="hint">없어도 돼요. JPG·PNG가 잘 들어갑니다.</p>
+      <div class="shop-preview" data-outfit-preview>${shopPreviewHtml(item.image)}</div>
+      <button type="button" class="text-btn" data-outfit-clear ${looksLikeImageData(item.image) ? "" : "hidden"}>이미지 빼기</button>
+      <button type="submit" class="primary-btn">저장</button>
+    </form>
+  `);
+  sheet.querySelector("form")?.addEventListener("submit", (submitEvent) => {
+    submitEvent.preventDefault();
+    const current = getTrip(trip.id);
+    if (current) saveOutfit(current, new FormData(submitEvent.target));
+  });
+  const imageInput = sheet.querySelector("[name='image']");
+  const preview = sheet.querySelector("[data-outfit-preview]");
+  const clearBtn = sheet.querySelector("[data-outfit-clear]");
+  if (looksLikeImageData(item.image)) imageInput.value = item.image;
+  sheet.querySelector("[name='title']")?.focus();
+  sheet.querySelector("[data-outfit-file]")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      toast("이미지를 줄이는 중...");
+      const data = await compressShopImage(file);
+      imageInput.value = data;
+      preview.innerHTML = `<img src="${data}" alt="">`;
+      clearBtn.hidden = false;
+    } catch (error) {
+      toast(error.message || "이미지를 넣지 못했습니다.");
+    }
+  });
+  clearBtn?.addEventListener("click", () => {
+    imageInput.value = "";
+    preview.innerHTML = shopPreviewHtml("");
+    clearBtn.hidden = true;
+  });
+}
+
+function openOutfitPhoto(trip, item) {
+  closeSheet();
+  const emojis = outfitEmojiMap(trip.outfits?.items || []);
+  const backdrop = document.createElement("div");
+  backdrop.className = "photo-backdrop";
+  backdrop.addEventListener("click", closeSheet);
+  const modal = document.createElement("div");
+  modal.className = "photo-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-label", item.title || "코디");
+  const hasImage = looksLikeImageData(item.image);
+  modal.innerHTML = `
+    <button type="button" class="photo-close" data-close-sheet aria-label="닫기">닫기</button>
+    <div class="photo-hero-wrap">
+      ${hasImage
+        ? `<img class="photo-hero" alt="${escapeHtml(item.title)}" src="${item.image}">`
+        : `<div class="photo-emoji" aria-hidden="true">${emojis[item.id] || "👗"}</div>`}
+    </div>
+    <h2>${escapeHtml(item.title)}</h2>
+    <p class="photo-meta">${escapeHtml(outfitFolderName(trip, item.folderId))}</p>
+    <div class="card-actions photo-actions">
+      <button type="button" class="ghost-btn" data-action="edit-outfit" data-id="${trip.id}" data-item="${item.id}">수정</button>
+      <button type="button" class="ghost-btn danger" data-action="delete-outfit" data-id="${trip.id}" data-item="${item.id}">삭제</button>
+    </div>
+  `;
+  modal.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (event.target.closest("[data-action]")) onClick(event);
+  });
+  modal.querySelector("[data-close-sheet]")?.addEventListener("click", closeSheet);
+  overlayRoot().append(backdrop, modal);
+  requestAnimationFrame(() => {
+    backdrop.classList.add("is-open");
+    modal.classList.add("is-open");
   });
 }
 
@@ -1656,6 +1781,7 @@ function render() {
     else if (route.tab === "bingo") renderBingoTab(trip);
     else if (route.tab === "checklist") renderChecklistTab(trip);
     else if (route.tab === "shop") renderShopTab(trip);
+    else if (route.tab === "outfit") renderOutfitTab(trip);
     else if (route.tab === "ledger") renderLedgerTab(trip);
     else if (route.tab === "more") renderMore(trip);
     else renderInfo(trip);
@@ -1833,6 +1959,98 @@ function onClick(event) {
   }
   if (action === "add-shop" && trip) {
     openShopForm(trip, {}, shopDefaultsFromView(trip));
+    return;
+  }
+  if (action === "add-outfit" && trip) {
+    openOutfitForm(trip, {}, outfitDefaultsFromView(trip));
+    return;
+  }
+  if (action === "outfit-mode" && trip) {
+    setOutfitView(trip.id, { mode: btn.dataset.mode === "all" ? "all" : "folders" });
+    render();
+    return;
+  }
+  if (action === "outfit-open-folder" && trip) {
+    setOutfitView(trip.id, { mode: "folders", folderOpen: true, folderId: String(btn.dataset.folder || "") });
+    render();
+    return;
+  }
+  if (action === "outfit-close-folder" && trip) {
+    setOutfitView(trip.id, { mode: "folders", folderOpen: false });
+    render();
+    return;
+  }
+  if (action === "add-outfit-folder" && trip) {
+    openPromptSheet({
+      title: "폴더 추가",
+      label: "폴더 이름",
+      saveLabel: "추가",
+      maxlength: 20,
+      onSave: (name) => {
+        trip.outfits = trip.outfits || { folders: [], items: [] };
+        trip.outfits.folders = trip.outfits.folders || [];
+        trip.outfits.folders.push({ id: uid("ofol"), name });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "rename-outfit-folder" && trip) {
+    const folder = (trip.outfits?.folders || []).find((entry) => entry.id === btn.dataset.folder);
+    if (!folder) return;
+    openPromptSheet({
+      title: "폴더 이름",
+      label: "폴더 이름",
+      value: folder.name,
+      maxlength: 20,
+      onSave: (name) => {
+        folder.name = name;
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "delete-outfit-folder" && trip) {
+    const folder = (trip.outfits?.folders || []).find((entry) => entry.id === btn.dataset.folder);
+    if (!folder) return;
+    openConfirmSheet({
+      title: "폴더 삭제",
+      message: `“${folder.name}” 폴더를 지울까요? 안의 코디는 분류 없음으로 옮겨집니다.`,
+      onConfirm: () => {
+        trip.outfits.folders = (trip.outfits?.folders || []).filter((entry) => entry.id !== folder.id);
+        (trip.outfits?.items || []).forEach((item) => {
+          if (item.folderId === folder.id) item.folderId = "";
+        });
+        const view = getOutfitView(trip.id);
+        if (view.folderId === folder.id) setOutfitView(trip.id, { folderOpen: false, folderId: "" });
+        upsertTrip(trip);
+        render();
+      },
+    });
+    return;
+  }
+  if (action === "open-outfit" && trip) {
+    const item = (trip.outfits?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (item) openOutfitPhoto(trip, item);
+    return;
+  }
+  if (action === "edit-outfit" && trip) {
+    const item = (trip.outfits?.items || []).find((entry) => entry.id === btn.dataset.item);
+    if (item) openOutfitForm(trip, item);
+    return;
+  }
+  if (action === "delete-outfit" && trip) {
+    openConfirmSheet({
+      title: "코디 삭제",
+      message: "이 코디를 지울까요?",
+      onConfirm: () => {
+        trip.outfits.items = (trip.outfits?.items || []).filter((entry) => entry.id !== btn.dataset.item);
+        upsertTrip(trip);
+        render();
+      },
+    });
     return;
   }
   if (action === "shop-mode" && trip) {
@@ -2258,6 +2476,28 @@ async function saveShop(trip, data) {
     }
     trip.shop.items[index] = payload;
   } else trip.shop.items.push(payload);
+  upsertTrip(trip);
+  closeSheet();
+  render();
+}
+
+function saveOutfit(trip, data) {
+  const title = String(data.get("title") || "").trim();
+  if (!title) {
+    toast("이름을 적어 주세요.");
+    return;
+  }
+  const payload = {
+    id: String(data.get("id") || "") || uid("outfit"),
+    title,
+    image: looksLikeImageData(String(data.get("image") || "")) ? String(data.get("image")) : "",
+    folderId: parseOutfitFolderField(data, trip),
+  };
+  trip.outfits = trip.outfits || { folders: [], items: [] };
+  trip.outfits.items = trip.outfits.items || [];
+  const index = trip.outfits.items.findIndex((item) => item.id === payload.id);
+  if (index >= 0) trip.outfits.items[index] = payload;
+  else trip.outfits.items.push(payload);
   upsertTrip(trip);
   closeSheet();
   render();

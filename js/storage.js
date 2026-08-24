@@ -219,7 +219,23 @@ function normalizeTrip(trip = {}) {
     checklist: normalizeChecklist(trip.checklist),
     people,
     shop: normalizeShop(trip.shop, currency, people.items),
+    outfits: normalizeOutfit(trip.outfits),
     ledger: normalizeLedger(trip.ledger, currency, people.items),
+  };
+}
+
+function normalizeOutfit(raw = {}) {
+  const folders = normalizeNamedList(raw.folders, "ofol");
+  const folderIds = new Set(folders.map((folder) => folder.id));
+  const source = Array.isArray(raw.items) ? raw.items : [];
+  return {
+    folders,
+    items: source.map((item, index) => ({
+      id: item.id || uid("outfit"),
+      title: String(item.title || `코디 ${index + 1}`).trim() || `코디 ${index + 1}`,
+      image: looksLikeStoredImage(item.image) ? item.image : "",
+      folderId: folderIds.has(item.folderId) ? item.folderId : "",
+    })),
   };
 }
 
