@@ -2061,7 +2061,9 @@ function onClick(event) {
     return;
   }
   if (action === "shop-open-folder" && trip) {
-    setShopView(trip.id, { mode: "folders", folderOpen: true, folderId: String(btn.dataset.folder || "") });
+    const folderId = String(btn.dataset.folder || "");
+    if (!folderId || !(trip.shop?.folders || []).some((folder) => folder.id === folderId)) return;
+    setShopView(trip.id, { mode: "folders", folderOpen: true, folderId });
     render();
     return;
   }
