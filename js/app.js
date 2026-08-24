@@ -1971,7 +1971,9 @@ function onClick(event) {
     return;
   }
   if (action === "outfit-open-folder" && trip) {
-    setOutfitView(trip.id, { mode: "folders", folderOpen: true, folderId: String(btn.dataset.folder || "") });
+    const folderId = String(btn.dataset.folder || "");
+    if (!folderId || !(trip.outfits?.folders || []).some((folder) => folder.id === folderId)) return;
+    setOutfitView(trip.id, { mode: "folders", folderOpen: true, folderId });
     render();
     return;
   }

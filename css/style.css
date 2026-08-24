@@ -1593,6 +1593,37 @@ a.more-row {
   color: var(--ink);
 }
 
+.shop-tile.tint-folder { background: #efe6d8; }
+.shop-tile.tint-up { background: #ececee; }
+
+.shop-tile.is-folder .folder-mark {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.46);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.shop-tile.is-folder:not(.tint-photo) .folder-mark { display: none; }
+
+.shop-tile-count {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.86;
+}
+
+@media (prefers-color-scheme: dark) {
+  .shop-tile.tint-folder { background: #3a342c; }
+  .shop-tile.tint-up { background: #2c2c2e; }
+}
+
 .shop-bought {
   position: absolute;
   inset: 0;
