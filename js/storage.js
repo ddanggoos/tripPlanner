@@ -262,6 +262,7 @@ function normalizeSpots(raw = {}) {
       lat: Number.isFinite(lat) ? lat : null,
       lng: Number.isFinite(lng) ? lng : null,
       placeId: String(item.placeId || "").trim(),
+      scheduled: Boolean(item.scheduled),
     };
   });
   return { folders, items };

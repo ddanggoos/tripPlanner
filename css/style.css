@@ -752,7 +752,8 @@ a.more-row {
   background: var(--card);
 }
 
-.card-actions .icon-btn.danger {
+.card-actions .icon-btn.danger,
+.card-actions .icon-btn.label {
   min-width: auto;
   padding: 0 12px;
   white-space: nowrap;
@@ -800,10 +801,6 @@ a.more-row {
 .place-num.spot-num {
   background: #ff9500;
   font-size: 14px;
-}
-
-.map-chip-row {
-  padding-bottom: 8px;
 }
 
 .food-marker span {
@@ -1188,6 +1185,10 @@ a.more-row {
 
 .route-hotel .route-name {
   max-width: 120px;
+}
+
+.route-food {
+  background: color-mix(in srgb, #ff9500 16%, var(--card));
 }
 
 .google-link {
