@@ -22,7 +22,7 @@ export function bingoReady(bingo = {}) {
 export function bingoStatus(bingo = {}) {
   if (!bingo.locked) {
     const filled = bingoFilledCount(bingo);
-    return filled ? `${filled}/25 채움` : "칸을 채워 확정하세요";
+    return filled ? `${filled}/25 채움` : "빈 칸의 +로 추가하세요";
   }
   const lines = completedLines(bingo.checked || []).length;
   return `${lines}줄 완성`;
@@ -86,17 +86,17 @@ export function renderBingo(trip) {
   }).join("");
 
   const status = locked
-    ? `${lines.length > 0 ? "🎉 " : ""}<strong>${lines.length}줄</strong> 완성 · 칸을 눌러 사진 또는 건너뛰기`
-    : `<strong>${filled}/25</strong> 채움 · 칸을 눌러 이름을 적고 확정하세요`;
+    ? `${lines.length > 0 ? "🎉 " : ""}<strong>${lines.length}줄</strong> 완성 · 칸을 눌러 사진·수정·삭제`
+    : `<strong>${filled}/25</strong> 채움 · 빈 칸은 + , 채운 칸은 수정·삭제`;
 
   return `
     <section class="bingo-wrap">
       <div class="bingo-status">${status}</div>
       <div class="bingo-grid" style="--size:${size}">${cells}</div>
       ${locked
-        ? `<p class="hint">칸을 누르면 먹은 사진을 배경으로 넣거나 건너뛸 수 있어요.</p>`
+        ? `<p class="hint">칸을 누르면 먹은 사진을 넣거나, 이름을 고치거나, 그 칸만 지울 수 있어요.</p>`
         : `
-          <p class="hint">25칸을 모두 채운 뒤 확정하면 빙고가 시작됩니다.</p>
+          <p class="hint">빈 칸의 +로 추가하고, 25칸을 채운 뒤 확정하면 빙고가 시작됩니다.</p>
           <button type="button" class="primary-btn" data-action="lock-bingo" data-id="${trip.id}" ${bingoReady(bingo) ? "" : "disabled"}>빙고 확정</button>
         `}
     </section>

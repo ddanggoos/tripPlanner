@@ -1327,7 +1327,7 @@ function renderBingoTab(trip) {
           <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
           <div class="topbar-title"><h1>🍽️ 먹거리 빙고</h1></div>
           ${locked
-            ? `<button type="button" class="text-btn" data-action="reset-bingo" data-id="${trip.id}">🔄 초기화</button>`
+            ? `<span></span>`
             : `<button type="button" class="text-btn" data-action="lock-bingo" data-id="${trip.id}">확정</button>`}
         </div>
       </header>
@@ -1340,17 +1340,37 @@ function renderBingoTab(trip) {
 }
 
 function openBingoName(trip, index) {
+  const existing = String(trip.bingo.items[index] || "").trim();
   openPromptSheet({
-    title: `${index + 1}칸 이름`,
+    title: existing ? `${index + 1}칸 수정` : `${index + 1}칸 추가`,
     label: "먹을 것",
-    value: trip.bingo.items[index] || "",
-    saveLabel: "넣기",
+    value: existing,
+    saveLabel: existing ? "저장" : "넣기",
     maxlength: 16,
     onSave: (label) => {
       trip.bingo.items[index] = label;
       upsertTrip(trip);
       render();
     },
+  });
+}
+
+function clearBingoCell(trip, index) {
+  trip.bingo.items[index] = "";
+  if (Array.isArray(trip.bingo.photos)) trip.bingo.photos[index] = "";
+  trip.bingo.checked = (trip.bingo.checked || []).filter((cell) => cell !== index);
+  upsertTrip(trip);
+  closeSheet();
+  render();
+}
+
+function confirmClearBingoCell(trip, index) {
+  const label = trip.bingo.items[index] || `${index + 1}칸`;
+  openConfirmSheet({
+    title: "칸 삭제",
+    message: `“${label}” 칸을 지울까요?`,
+    confirmLabel: "삭제",
+    onConfirm: () => clearBingoCell(trip, index),
   });
 }
 
@@ -1391,6 +1411,12 @@ function openBingoMark(trip, index) {
   const label = trip.bingo.items[index] || `${index + 1}칸`;
   const on = (trip.bingo.checked || []).includes(index);
   const photo = looksLikeImageData(trip.bingo.photos?.[index]) ? trip.bingo.photos[index] : "";
+  const manage = `
+    <div class="card-actions">
+      <button type="button" class="ghost-btn" data-bingo-edit>수정</button>
+      <button type="button" class="ghost-btn danger" data-bingo-delete>삭제</button>
+    </div>
+  `;
 
   if (on) {
     const sheet = openSheet(`🍽️ ${label}`, `
@@ -1398,7 +1424,8 @@ function openBingoMark(trip, index) {
         ${photo ? `<img class="bingo-preview" alt="" src="${photo}">` : `<p>사진 없이 체크되어 있어요.</p>`}
         <button type="button" class="primary-btn" data-bingo-photo>${photo ? "사진 바꾸기" : "사진 올리기"}</button>
         <input type="file" accept="image/*" hidden data-bingo-file>
-        <button type="button" class="ghost-btn danger" data-bingo-uncheck>체크 취소</button>
+        <button type="button" class="ghost-btn" data-bingo-uncheck>체크 취소</button>
+        ${manage}
       </div>
     `);
     bingoPhotoInput(sheet, async (data) => markBingo(trip, index, data));
@@ -1408,6 +1435,8 @@ function openBingoMark(trip, index) {
       closeSheet();
       render();
     });
+    sheet.querySelector("[data-bingo-edit]")?.addEventListener("click", () => openBingoName(trip, index));
+    sheet.querySelector("[data-bingo-delete]")?.addEventListener("click", () => confirmClearBingoCell(trip, index));
     return;
   }
 
@@ -1417,10 +1446,25 @@ function openBingoMark(trip, index) {
       <button type="button" class="primary-btn" data-bingo-photo>사진 올리기</button>
       <input type="file" accept="image/*" hidden data-bingo-file>
       <button type="button" class="ghost-btn" data-bingo-skip>건너뛰고 체크</button>
+      ${manage}
     </div>
   `);
   bingoPhotoInput(sheet, async (data) => markBingo(trip, index, data));
   sheet.querySelector("[data-bingo-skip]")?.addEventListener("click", () => markBingo(trip, index, ""));
+  sheet.querySelector("[data-bingo-edit]")?.addEventListener("click", () => openBingoName(trip, index));
+  sheet.querySelector("[data-bingo-delete]")?.addEventListener("click", () => confirmClearBingoCell(trip, index));
+}
+
+function openBingoFilled(trip, index) {
+  const label = trip.bingo.items[index] || `${index + 1}칸`;
+  const sheet = openSheet(`🍽️ ${label}`, `
+    <div class="stack-form">
+      <button type="button" class="primary-btn" data-bingo-edit>수정</button>
+      <button type="button" class="ghost-btn danger" data-bingo-delete>삭제</button>
+    </div>
+  `);
+  sheet.querySelector("[data-bingo-edit]")?.addEventListener("click", () => openBingoName(trip, index));
+  sheet.querySelector("[data-bingo-delete]")?.addEventListener("click", () => confirmClearBingoCell(trip, index));
 }
 
 function renderNew() {
@@ -2367,8 +2411,9 @@ function onClick(event) {
   if (action === "bingo-cell" && trip) {
     const index = Number(btn.dataset.index);
     if (!Number.isInteger(index) || index < 0 || index >= BINGO_CELLS) return;
-    if (!trip.bingo.items[index] || !trip.bingo.locked) openBingoName(trip, index);
-    else openBingoMark(trip, index);
+    if (!String(trip.bingo.items[index] || "").trim()) openBingoName(trip, index);
+    else if (trip.bingo.locked) openBingoMark(trip, index);
+    else openBingoFilled(trip, index);
     return;
   }
   if (action === "lock-bingo" && trip) {
@@ -2378,7 +2423,7 @@ function onClick(event) {
     }
     openConfirmSheet({
       title: "빙고 확정",
-      message: "25칸을 확정할까요? 이후에는 이름을 바꿀 수 없고, 칸을 눌러 사진을 올리거나 건너뜁니다.",
+      message: "25칸을 확정할까요? 확정하면 칸을 눌러 사진을 올리거나 건너뜁니다. 이름 수정·삭제는 칸에서 할 수 있어요.",
       confirmLabel: "확정",
       danger: false,
       onConfirm: () => {
@@ -2388,19 +2433,6 @@ function onClick(event) {
         upsertTrip(trip);
         render();
         toast("🍽️ 빙고가 시작됩니다");
-      },
-    });
-    return;
-  }
-  if (action === "reset-bingo" && trip) {
-    openConfirmSheet({
-      title: "빙고 처음부터",
-      message: "칸 이름·사진·체크를 모두 지우고 빈 판으로 돌아갈까요?",
-      confirmLabel: "처음부터",
-      onConfirm: () => {
-        trip.bingo = emptyBingo();
-        upsertTrip(trip);
-        render();
       },
     });
     return;
