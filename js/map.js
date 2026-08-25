@@ -256,7 +256,7 @@ export function flyToPlace(place) {
   if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return;
   if (engine === "google" && googleMap) {
     googleMap.panTo({ lat: place.lat, lng: place.lng });
-    if ((googleMap.getZoom() || 12) < 15) googleMap.setZoom(16);
+    googleMap.setZoom(16);
     return;
   }
   if (!leafletMap) return;
@@ -342,11 +342,14 @@ export function drawRoute(places, hotels = []) {
       zIndexOffset: -10,
     });
     const here = googleMapsHereUrl(hotel);
+    const maps = googleMapsUrl(hotel);
     marker.bindPopup(`
       <strong>🏨 ${escapeHtml(hotel.title || hotel.name || "숙소")}</strong>
       ${hotel.address ? `<br>${escapeHtml(hotel.address)}` : ""}
       ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
+      ${maps ? `<br><a href="${maps}" target="_blank" rel="noopener noreferrer">🗺 구글맵에서 열기</a>` : ""}
     `);
+    marker.on("click", () => flyToPlace(hotel));
     leafletMarkers.addLayer(marker);
   });
 
