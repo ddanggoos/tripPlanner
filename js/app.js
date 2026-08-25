@@ -267,6 +267,20 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function topbarSpacer() {
+  return `<span class="topbar-btn is-spacer" aria-hidden="true"></span>`;
+}
+
+function topbarLink(href, label) {
+  return `<a class="topbar-btn" href="${href}">${escapeHtml(label)}</a>`;
+}
+
+function topbarAction({ action, id = "", label, disabled = false, attrs = "" }) {
+  const tripAttr = id ? ` data-id="${escapeHtml(id)}"` : "";
+  const off = disabled ? " disabled" : "";
+  return `<button type="button" class="topbar-btn" data-action="${escapeHtml(action)}"${tripAttr}${attrs}${off}>${escapeHtml(label)}</button>`;
+}
+
 function tripRangeLabel(trip) {
   if (trip.startDate && trip.endDate) {
     return `${formatDateKo(trip.startDate)} – ${formatDateKo(trip.endDate)}`;
@@ -500,9 +514,9 @@ function renderJoin(shareId) {
     <div class="screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/">목록</a>
+          ${topbarLink("#/", "목록")}
           <div class="topbar-title"><h1>공유 여행</h1></div>
-          <span></span>
+          ${topbarSpacer()}
         </div>
       </header>
       <main class="content">
@@ -622,12 +636,12 @@ function renderInfo(trip) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/">목록</a>
+          ${topbarLink("#/", "목록")}
           <div class="topbar-title">
             <p class="eyebrow">📍 ${escapeHtml(trip.destination || countryOf(trip.country)?.name || "목적지 미정")}${trip.shareId && isSyncReady() ? " · 💌 실시간" : ""}</p>
             <h1>${escapeHtml(trip.name)}</h1>
           </div>
-          <button type="button" class="text-btn" data-action="edit-trip" data-id="${trip.id}">이름</button>
+          ${topbarAction({ action: "edit-trip", id: trip.id, label: "이름" })}
         </div>
       </header>
       <main class="content has-tabbar">
@@ -854,9 +868,9 @@ function renderPlan(trip, date) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/">목록</a>
+          ${topbarLink("#/", "목록")}
           <div class="topbar-title"><h1>🗓️ 일정</h1></div>
-          <button type="button" class="text-btn" data-action="add-place" data-id="${trip.id}" ${selected ? "" : "disabled"}>추가</button>
+          ${topbarAction({ action: "add-place", id: trip.id, label: "추가", disabled: !selected })}
         </div>
       </header>
       <main class="content has-tabbar">
@@ -947,9 +961,9 @@ function renderMapTab(trip, date) {
     <div class="screen map-screen">
       <header class="topbar overlay">
         <div class="topbar-inner">
-          <a class="back" href="#/">목록</a>
+          ${topbarLink("#/", "목록")}
           <div class="topbar-title"><h1>🗺️ 지도</h1></div>
-          <span></span>
+          ${topbarSpacer()}
         </div>
         <div class="map-tools">
           ${dayChips(trip, selected, `#/trip/${trip.id}/map`)}
@@ -1013,9 +1027,9 @@ function renderMore(trip) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/">목록</a>
+          ${topbarLink("#/", "목록")}
           <div class="topbar-title"><h1>✨ 더보기</h1></div>
-          <span></span>
+          ${topbarSpacer()}
         </div>
       </header>
       <main class="content has-tabbar">
@@ -1066,9 +1080,9 @@ function renderChecklistTab(trip) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          ${topbarLink(`#/trip/${encodeURIComponent(trip.id)}/more`, "더보기")}
           <div class="topbar-title"><h1>☑️ 체크리스트</h1></div>
-          <button type="button" class="text-btn" data-action="add-check" data-id="${trip.id}">추가</button>
+          ${topbarAction({ action: "add-check", id: trip.id, label: "추가" })}
         </div>
       </header>
       <main class="content has-tabbar">
@@ -1085,9 +1099,9 @@ function renderShopTab(trip) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          ${topbarLink(`#/trip/${encodeURIComponent(trip.id)}/more`, "더보기")}
           <div class="topbar-title"><h1>🛍️ 쇼핑</h1></div>
-          <button type="button" class="text-btn" data-action="add-shop" data-id="${trip.id}">추가</button>
+          ${topbarAction({ action: "add-shop", id: trip.id, label: "추가" })}
         </div>
       </header>
       <main class="content has-tabbar">
@@ -1105,9 +1119,9 @@ function renderLedgerTab(trip) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          ${topbarLink(`#/trip/${encodeURIComponent(trip.id)}/more`, "더보기")}
           <div class="topbar-title"><h1>📒 가계부</h1></div>
-          <button type="button" class="text-btn" data-action="add-ledger" data-id="${trip.id}">추가</button>
+          ${topbarAction({ action: "add-ledger", id: trip.id, label: "추가" })}
         </div>
       </header>
       <main class="content has-tabbar">
@@ -1125,9 +1139,9 @@ function renderOutfitTab(trip) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          ${topbarLink(`#/trip/${encodeURIComponent(trip.id)}/more`, "더보기")}
           <div class="topbar-title"><h1>👗 뭐입지</h1></div>
-          <button type="button" class="text-btn" data-action="add-outfit" data-id="${trip.id}">추가</button>
+          ${topbarAction({ action: "add-outfit", id: trip.id, label: "추가" })}
         </div>
       </header>
       <main class="content has-tabbar">
@@ -1356,11 +1370,11 @@ function renderBingoTab(trip) {
     <div class="screen trip-screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/trip/${encodeURIComponent(trip.id)}/more">더보기</a>
+          ${topbarLink(`#/trip/${encodeURIComponent(trip.id)}/more`, "더보기")}
           <div class="topbar-title"><h1>🍽️ 먹거리 빙고</h1></div>
           ${locked
-            ? `<span></span>`
-            : `<button type="button" class="text-btn" data-action="lock-bingo" data-id="${trip.id}">확정</button>`}
+            ? topbarSpacer()
+            : topbarAction({ action: "lock-bingo", id: trip.id, label: "확정" })}
         </div>
       </header>
       <main class="content has-tabbar bingo-content">
@@ -1505,9 +1519,9 @@ function renderNew() {
     <div class="screen">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="back" href="#/">취소</a>
+          ${topbarLink("#/", "취소")}
           <div class="topbar-title"><h1>🧳 새 여행</h1></div>
-          <span></span>
+          ${topbarSpacer()}
         </div>
       </header>
       <main class="content">
