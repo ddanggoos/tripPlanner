@@ -353,13 +353,17 @@ function planSelectionFor(trip, params) {
   const folderParam = String(params.get("f") || "");
   const dateParam = String(params.get("d") || "");
   if (folderParam && spotFolderById(trip, folderParam)) {
-    selectedFolders[trip.id] = folderParam;
-    saveSelectedFolders();
+    if (selectedFolders[trip.id] !== folderParam) {
+      selectedFolders[trip.id] = folderParam;
+      saveSelectedFolders();
+    }
     return { kind: "folder", folderId: folderParam };
   }
   if (dateParam && daysOf(trip).includes(dateParam)) {
-    delete selectedFolders[trip.id];
-    saveSelectedFolders();
+    if (selectedFolders[trip.id]) {
+      delete selectedFolders[trip.id];
+      saveSelectedFolders();
+    }
     setSelectedDate(trip.id, dateParam);
     return { kind: "date", date: dateParam };
   }
@@ -457,10 +461,14 @@ function shareStatusText(trip) {
 }
 
 let cloudLive = false;
+let lastAppliedCloudAt = 0;
 
 function applyCloudState(data) {
   if (!data || !Array.isArray(data.trips)) return false;
+  const remoteAt = Number(data.updatedAt) || 0;
+  if (remoteAt && remoteAt === lastAppliedCloudAt) return false;
   setState({ trips: data.trips }, { fromRemote: true });
+  if (remoteAt) lastAppliedCloudAt = remoteAt;
   cloudLive = true;
   return true;
 }
