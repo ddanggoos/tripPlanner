@@ -732,6 +732,29 @@ function mapFoodChip(trip) {
   `;
 }
 
+function mapChips(trip, selected, hrefBase) {
+  const days = daysOf(trip);
+  const food = mapFoodChip(trip);
+  if (!days.length) {
+    return `
+      <div class="chips" role="toolbar" aria-label="지도 필터">
+        ${food}
+      </div>
+      <div class="empty compact"><span class="empty-icon">🗓️</span>먼저 정보 탭에서 여행 날짜를 저장하세요.</div>
+    `;
+  }
+  return `
+    <div class="chips" role="tablist" aria-label="지도 날짜·맛집">
+      ${food}
+      ${days.map((date) => `
+        <a class="chip ${date === selected ? "is-active" : ""}" href="${hrefBase}?d=${date}">
+          ${formatDateKo(date)}
+        </a>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderInfo(trip) {
   const days = daysOf(trip);
   const datesSet = Boolean(days.length);
@@ -971,24 +994,23 @@ function placeCard(trip, place, index, total) {
   `;
 }
 
-function spotCard(trip, spot, index, total) {
+function spotCard(trip, spot) {
   const hasGeo = Number.isFinite(spot.lat) && Number.isFinite(spot.lng);
   const days = daysOf(trip);
+  const scheduleLabel = spot.scheduled ? "일정 추가 완료" : "일정 추가 전";
   return `
     <article class="place-card">
       <button type="button" class="place-edit" data-action="edit-spot" data-id="${trip.id}" data-item="${spot.id}">
         <span class="place-num spot-num">🍽️</span>
         <span class="place-copy">
           <h3>${escapeHtml(spot.title || "장소")}</h3>
-          <p class="meta">${hasGeo ? "위치 저장됨" : "위치 없음"} · 일정 아님</p>
+          <p class="meta">${hasGeo ? "위치 저장됨" : "위치 없음"} · ${scheduleLabel}</p>
         </span>
       </button>
       ${spot.note ? `<p class="note">${escapeHtml(spot.note)}</p>` : ""}
       <div class="card-actions">
         ${placeNavLinks(spot)}
-        <button type="button" class="text-btn" data-action="schedule-spot" data-id="${trip.id}" data-item="${spot.id}" ${days.length ? "" : "disabled"}>일정으로</button>
-        <button type="button" class="icon-btn" data-action="move-spot" data-id="${trip.id}" data-item="${spot.id}" data-dir="-1" ${index === 0 ? "disabled" : ""} aria-label="위로">↑</button>
-        <button type="button" class="icon-btn" data-action="move-spot" data-id="${trip.id}" data-item="${spot.id}" data-dir="1" ${index === total - 1 ? "disabled" : ""} aria-label="아래로">↓</button>
+        <button type="button" class="icon-btn label" data-action="schedule-spot" data-id="${trip.id}" data-item="${spot.id}" ${days.length ? "" : "disabled"}>일정으로</button>
         <button type="button" class="icon-btn danger" data-action="delete-spot" data-id="${trip.id}" data-item="${spot.id}" aria-label="삭제">삭제</button>
       </div>
     </article>
@@ -1038,7 +1060,7 @@ function renderPlan(trip, params) {
         ${isFolder ? folderToolbar(trip, folderId) : ""}
         ${isFolder
           ? (spots.length
-            ? spots.map((spot, index) => spotCard(trip, spot, index, spots.length)).join("")
+            ? spots.map((spot) => spotCard(trip, spot)).join("")
             : `<div class="empty compact"><span class="empty-icon">🍽️</span>${escapeHtml(folderLabel)}에 저장된 장소가 없습니다. 후보로 모아 두고 일정에 넣을 수 있어요.</div>`)
           : (selected
             ? (places.length
@@ -1053,35 +1075,62 @@ function renderPlan(trip, params) {
 
 function hotelFlyRow(hotels) {
   if (!hotels.length) return "";
+  return hotels.map((hotel) => `
+    <button
+      type="button"
+      class="route-hotel"
+      role="listitem"
+      data-action="fly-place"
+      data-lat="${hotel.lat}"
+      data-lng="${hotel.lng}"
+      aria-label="숙소 ${escapeHtml(hotel.title || "숙소")} 위치로 이동"
+    >
+      <span aria-hidden="true">🏨</span>
+      <span class="route-name">${escapeHtml(hotel.title || "숙소")}</span>
+    </button>
+  `).join("");
+}
+
+function foodFlyRow(foods) {
+  if (!foods.length) return "";
+  return foods.map((spot) => `
+    <button
+      type="button"
+      class="route-hotel route-food"
+      role="listitem"
+      data-action="fly-place"
+      data-lat="${spot.lat}"
+      data-lng="${spot.lng}"
+      aria-label="맛집 ${escapeHtml(spot.title || "맛집")} 위치로 이동"
+    >
+      <span aria-hidden="true">🍽️</span>
+      <span class="route-name">${escapeHtml(spot.title || "맛집")}</span>
+    </button>
+  `).join("");
+}
+
+function pinFlyRow(hotels = [], foods = []) {
+  const hotelPins = hotels.filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng));
+  const foodPins = foods.filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng));
+  if (!hotelPins.length && !foodPins.length) return "";
   return `
-    <div class="route-hotels" role="list" aria-label="숙소">
-      ${hotels.map((hotel) => `
-        <button
-          type="button"
-          class="route-hotel"
-          role="listitem"
-          data-action="fly-place"
-          data-lat="${hotel.lat}"
-          data-lng="${hotel.lng}"
-          aria-label="숙소 ${escapeHtml(hotel.title || "숙소")} 위치로 이동"
-        >
-          <span aria-hidden="true">🏨</span>
-          <span class="route-name">${escapeHtml(hotel.title || "숙소")}</span>
-        </button>
-      `).join("")}
+    <div class="route-hotels" role="list" aria-label="숙소·맛집">
+      ${hotelFlyRow(hotelPins)}
+      ${foodFlyRow(foodPins)}
     </div>
   `;
 }
 
-function routeStrip(places, hotels = []) {
+function routeStrip(places, hotels = [], foods = []) {
   const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
   const hotelPins = hotels.filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng));
-  const hotelRow = hotelFlyRow(hotelPins);
+  const foodPins = foods.filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng));
+  const pinsRow = pinFlyRow(hotelPins, foodPins);
   if (!pinned.length) {
-    if (hotelPins.length) {
+    if (hotelPins.length || foodPins.length) {
       return `
         <div class="route-dock">
-          ${hotelRow}
+          ${pinsRow}
         </div>
       `;
     }
@@ -1091,7 +1140,7 @@ function routeStrip(places, hotels = []) {
   const allNavi = googleMapsDirUrl(pinned, mode, { fromHere: true });
   return `
     <div class="route-dock">
-      ${hotelRow}
+      ${pinsRow}
       <div class="route-strip" role="list">
         ${pinned.map((place, index) => `
           <div class="route-stop-group" role="listitem">
@@ -1138,10 +1187,7 @@ function renderMapTab(trip, date) {
           ${topbarSpacer()}
         </div>
         <div class="map-tools">
-          <div class="chips map-chip-row" role="toolbar" aria-label="지도 필터">
-            ${mapFoodChip(trip)}
-          </div>
-          ${dayChips(trip, selected, `#/trip/${trip.id}/map`)}
+          ${mapChips(trip, selected, `#/trip/${trip.id}/map`)}
           <form class="search-form" data-form="search">
             <input type="search" name="q" placeholder="🔍 식당, 명소, 구글맵 링크" enterkeyhint="search" autocomplete="off">
           </form>
@@ -1149,7 +1195,7 @@ function renderMapTab(trip, date) {
         </div>
       </header>
       <div id="map" class="map-canvas" role="application" aria-label="일정 지도"></div>
-      ${routeStrip(places, hotels)}
+      ${routeStrip(places, hotels, foodSpots)}
       ${tabbar(trip, "map")}
     </div>
   `;
@@ -2100,6 +2146,7 @@ function saveSpot(trip, formData) {
       lat: Number.isFinite(lat) ? lat : null,
       lng: Number.isFinite(lng) ? lng : null,
       placeId: placeId || "",
+      scheduled: false,
     });
   }
   upsertTrip(trip);
@@ -2149,6 +2196,7 @@ function openScheduleSpotSheet(trip, spot) {
       lng: Number.isFinite(spot.lng) ? spot.lng : null,
       placeId: spot.placeId || "",
     });
+    spot.scheduled = true;
     upsertTrip(trip);
     closeSheet();
     toast(`${formatDateKo(date)} 일정에 추가했어요`);
