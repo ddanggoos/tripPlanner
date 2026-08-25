@@ -767,7 +767,7 @@ function renderInfo(trip) {
                 ${hotel.pnr ? `<p class="meta">🎫 예약 ${escapeHtml(hotel.pnr)}</p>` : ""}
                 ${hotel.note ? `<p class="note">${escapeHtml(hotel.note)}</p>` : ""}
                 <div class="card-actions">
-                  ${hereNavLink(hotelPin(hotel)) || `<span class="card-actions-spacer"></span>`}
+                  ${placeNavLinks(hotelPin(hotel))}
                   <button type="button" class="ghost-btn" data-action="edit-hotel" data-id="${trip.id}" data-item="${hotel.id}">수정</button>
                   <button type="button" class="ghost-btn danger" data-action="delete-hotel" data-id="${trip.id}" data-item="${hotel.id}">삭제</button>
                 </div>
@@ -804,6 +804,23 @@ function hereNavLink(place, { label = "🧭 길찾기", className = "place-here"
   return `<a class="${className}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" aria-label="현 위치에서 ${title}까지 길찾기">${label}</a>`;
 }
 
+function mapsOpenLink(place, { label = "🗺 구글맵 열기", className = "place-maps" } = {}) {
+  const hasPoint = Number.isFinite(place?.lat) && Number.isFinite(place?.lng);
+  const hasName = Boolean(place?.placeId || place?.title || place?.name || place?.query || place?.address);
+  if (!hasPoint && !hasName) return "";
+  const href = googleMapsUrl(place);
+  if (!href) return "";
+  const title = escapeHtml(place.title || place.name || "장소");
+  return `<a class="${className}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" aria-label="${title} 구글맵에서 열기">${label}</a>`;
+}
+
+function placeNavLinks(place) {
+  const here = hereNavLink(place);
+  const maps = mapsOpenLink(place);
+  if (!here && !maps) return `<span class="card-actions-spacer"></span>`;
+  return `<div class="nav-pair">${here}${maps}</div>`;
+}
+
 function hotelPin(hotel) {
   return {
     title: hotel.name || "숙소",
@@ -834,7 +851,7 @@ function placeCard(trip, place, index, total) {
       </button>
       ${place.note ? `<p class="note">${escapeHtml(place.note)}</p>` : ""}
       <div class="card-actions">
-        ${hereNavLink(place) || `<span class="card-actions-spacer"></span>`}
+        ${placeNavLinks(place)}
         <button type="button" class="icon-btn" data-action="move-place" data-id="${trip.id}" data-item="${place.id}" data-dir="-1" ${index === 0 ? "disabled" : ""} aria-label="위로">↑</button>
         <button type="button" class="icon-btn" data-action="move-place" data-id="${trip.id}" data-item="${place.id}" data-dir="1" ${index === total - 1 ? "disabled" : ""} aria-label="아래로">↓</button>
         <button type="button" class="icon-btn danger" data-action="delete-place" data-id="${trip.id}" data-item="${place.id}" aria-label="삭제">삭제</button>
@@ -866,15 +883,74 @@ function renderPlan(trip, date) {
   `;
 }
 
+function hotelFlyRow(hotels) {
+  if (!hotels.length) return "";
+  return `
+    <div class="route-hotels" role="list" aria-label="숙소">
+      ${hotels.map((hotel) => `
+        <button
+          type="button"
+          class="route-hotel"
+          role="listitem"
+          data-action="fly-place"
+          data-lat="${hotel.lat}"
+          data-lng="${hotel.lng}"
+          aria-label="숙소 ${escapeHtml(hotel.title || "숙소")} 위치로 이동"
+        >
+          <span aria-hidden="true">🏨</span>
+          <span class="route-name">${escapeHtml(hotel.title || "숙소")}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
 function routeStrip(places, hotels = []) {
   const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
   const hotelPins = hotels.filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng));
+  const hotelRow = hotelFlyRow(hotelPins);
   if (!pinned.length) {
     if (hotelPins.length) {
-      return `<p class="map-hint">🏨 숙소 ${hotelPins.length}곳이 지도에 항상 표시됩니다. 날짜 장소를 추가하면 경로가 이어집니다.</p>`;
+      return `
+        <div class="route-dock">
+          ${hotelRow}
+        </div>
+      `;
     }
     return `<p class="map-hint">📍 지도를 누르거나 장소 이름·구글맵 링크로 추가하세요.</p>`;
   }
+  const mode = getRouteMode();
+  const allNavi = googleMapsDirUrl(pinned, mode, { fromHere: true });
+  return `
+    <div class="route-dock">
+      ${hotelRow}
+      <div class="route-strip" role="list">
+        ${pinned.map((place, index) => `
+          <div class="route-stop-group" role="listitem">
+            <button
+              type="button"
+              class="route-stop"
+              data-action="fly-place"
+              data-lat="${place.lat}"
+              data-lng="${place.lng}"
+              aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
+            >
+              <span class="route-num">${index + 1}</span>
+              <span class="route-name">${escapeHtml(place.title || "장소")}</span>
+            </button>
+            ${hereNavLink(place, { label: "🧭", className: "route-here" })}
+          </div>
+          ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
+        `).join("")}
+      </div>
+      <div class="route-nav">
+        <button type="button" class="chip ${mode === "WALKING" ? "is-active" : ""}" data-action="route-mode" data-mode="WALKING">🚶 도보</button>
+        <button type="button" class="chip ${mode === "DRIVING" ? "is-active" : ""}" data-action="route-mode" data-mode="DRIVING">🚗 자동차</button>
+        ${pinned.length >= 2 ? `<a class="chip" href="${escapeHtml(allNavi)}" target="_blank" rel="noopener noreferrer">🧭 전체 경로</a>` : ""}
+      </div>
+    </div>
+  `;
+}
   const mode = getRouteMode();
   const allNavi = googleMapsDirUrl(pinned, mode, { fromHere: true });
   return `

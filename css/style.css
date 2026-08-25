@@ -204,7 +204,7 @@ p { margin: 0; }
   text-transform: uppercase;
 }
 
-.back, .text-btn, .ghost-btn, .icon-btn, .primary-btn, .fab, .chip, .tab-item, .share-cta, .trip-delete, .place-here, .route-here {
+.back, .text-btn, .ghost-btn, .icon-btn, .primary-btn, .fab, .chip, .tab-item, .share-cta, .trip-delete, .place-here, .place-maps, .route-here, .route-hotel {
   appearance: none;
   border: 0;
   background: none;
@@ -686,6 +686,7 @@ a.more-row {
 .card-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 12px;
   padding-top: 10px;
@@ -794,19 +795,42 @@ a.more-row {
   margin: 8px 0 0 40px;
 }
 
-.place-here {
+.place-here,
+.place-maps {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 40px;
-  padding: 0 12px;
+  padding: 0 8px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--accent) 12%, var(--field));
   color: var(--accent);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-decoration: none;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.place-maps {
+  background: color-mix(in srgb, var(--accent-2, #32c9c9) 14%, var(--field));
+  color: var(--ink);
+}
+
+.nav-pair {
+  flex: 1 1 180px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nav-pair .place-here,
+.nav-pair .place-maps {
+  flex: none;
+  width: 100%;
+  min-width: 0;
 }
 
 .place-geo-links {
@@ -1062,6 +1086,36 @@ a.more-row {
   color: var(--muted);
   padding: 0 2px;
   flex: 0 0 auto;
+}
+
+.route-hotels {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+}
+
+.route-hotels::-webkit-scrollbar { display: none; }
+
+.route-hotel {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
+.route-hotel .route-name {
+  max-width: 120px;
 }
 
 .google-link {
