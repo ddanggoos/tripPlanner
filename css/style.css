@@ -171,7 +171,7 @@ p { margin: 0; }
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   min-height: var(--topbar);
-  column-gap: 8px;
+  column-gap: 4px;
 }
 
 .topbar-inner > :first-child {
@@ -194,11 +194,15 @@ p { margin: 0; }
   text-align: center;
   min-width: 0;
   max-width: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: center;
 }
 
 .topbar-title h1,
 .home-screen h1 {
   font-size: 20px;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -218,26 +222,46 @@ p { margin: 0; }
   text-transform: uppercase;
 }
 
-.back, .text-btn, .ghost-btn, .icon-btn, .primary-btn, .fab, .chip, .tab-item, .share-cta, .trip-delete, .place-here, .place-maps, .route-here, .route-hotel {
+.text-btn, .ghost-btn, .icon-btn, .primary-btn, .fab, .chip, .tab-item, .share-cta, .trip-delete, .place-here, .place-maps, .route-here, .route-hotel, .topbar-btn {
   appearance: none;
   border: 0;
   background: none;
   text-decoration: none;
 }
 
-.back, .text-btn {
+.topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 10px;
+  margin: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.topbar-btn.is-spacer {
+  visibility: hidden;
+  pointer-events: none;
+  min-width: 44px;
+  padding: 0 10px;
+}
+
+.text-btn {
+  display: inline-flex;
+  align-items: center;
   min-height: 44px;
   padding: 0 10px;
   color: var(--accent);
   font-weight: 700;
   font-size: 15px;
-}
-
-.back { text-align: left; }
-
-.topbar-inner > .text-btn,
-.topbar-actions .text-btn {
-  text-align: right;
+  line-height: 1;
 }
 
 .content {
