@@ -789,6 +789,35 @@ a.more-row {
   box-shadow: var(--shadow-accent);
 }
 
+.chip-add {
+  min-width: 36px;
+  padding-inline: 0;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.place-num.spot-num {
+  background: #ff9500;
+  font-size: 14px;
+}
+
+.map-chip-row {
+  padding-bottom: 8px;
+}
+
+.food-marker span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  font-size: 16px;
+  line-height: 1;
+}
+
 .place-card {
   display: grid;
   gap: 0;

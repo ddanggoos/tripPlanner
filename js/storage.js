@@ -215,6 +215,7 @@ function normalizeTrip(trip = {}) {
     flights: Array.isArray(trip.flights) ? trip.flights : [],
     hotels: Array.isArray(trip.hotels) ? trip.hotels.map(normalizeHotel) : [],
     places: Array.isArray(trip.places) ? trip.places : [],
+    spots: normalizeSpots(trip.spots),
     bingo: normalizeBingo(trip.bingo),
     checklist: normalizeChecklist(trip.checklist),
     people,
@@ -237,6 +238,50 @@ function normalizeOutfit(raw = {}) {
       folderId: folderIds.has(item.folderId) ? item.folderId : "",
     })),
   };
+}
+
+export const FOOD_FOLDER_ID = "food";
+export const FOOD_FOLDER_NAME = "맛집";
+
+function normalizeSpots(raw = {}) {
+  const folders = normalizeNamedList(raw.folders, "pfol")
+    .filter((folder) => folder.id !== FOOD_FOLDER_ID);
+  folders.unshift({ id: FOOD_FOLDER_ID, name: FOOD_FOLDER_NAME });
+  const folderIds = new Set(folders.map((folder) => folder.id));
+  const source = Array.isArray(raw.items) ? raw.items : [];
+  const items = source.map((item, index) => {
+    const folderId = folderIds.has(item.folderId) ? item.folderId : FOOD_FOLDER_ID;
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    return {
+      id: item.id || uid("spot"),
+      folderId,
+      order: Number(item.order) > 0 ? Number(item.order) : index + 1,
+      title: String(item.title || `장소 ${index + 1}`).trim() || `장소 ${index + 1}`,
+      note: String(item.note || "").trim(),
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
+      placeId: String(item.placeId || "").trim(),
+    };
+  });
+  return { folders, items };
+}
+
+export function spotsForFolder(trip, folderId) {
+  const id = folderId || FOOD_FOLDER_ID;
+  return (trip.spots?.items || [])
+    .filter((item) => item.folderId === id)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+export function reindexSpots(trip, folderId) {
+  spotsForFolder(trip, folderId).forEach((item, index) => {
+    item.order = index + 1;
+  });
+}
+
+export function spotFolderById(trip, folderId) {
+  return (trip.spots?.folders || []).find((folder) => folder.id === folderId) || null;
 }
 
 function normalizeState(raw) {

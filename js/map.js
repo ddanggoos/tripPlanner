@@ -18,6 +18,7 @@ let googleClick = null;
 let googleRenderer = null;
 let lastGooglePlaces = [];
 let lastGoogleHotels = [];
+let lastGoogleSpots = [];
 let googleReady = false;
 let googleFailed = false;
 let googleLoad = null;
@@ -31,8 +32,8 @@ export function getRouteMode() {
 
 export function setRouteMode(mode) {
   localStorage.setItem(ROUTE_MODE_KEY, mode === "DRIVING" ? "DRIVING" : "WALKING");
-  if (engine === "google" && (lastGooglePlaces.length || lastGoogleHotels.length)) {
-    drawGoogleRoute(lastGooglePlaces, lastGoogleHotels);
+  if (engine === "google" && (lastGooglePlaces.length || lastGoogleHotels.length || lastGoogleSpots.length)) {
+    drawGoogleRoute(lastGooglePlaces, lastGoogleHotels, lastGoogleSpots);
   }
 }
 
@@ -173,6 +174,8 @@ export function destroyMap() {
   googleClick = null;
   googleRenderer = null;
   lastGooglePlaces = [];
+  lastGoogleHotels = [];
+  lastGoogleSpots = [];
   engine = null;
 }
 
@@ -318,9 +321,9 @@ export function googleMapsUrl(place) {
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 
-export function drawRoute(places, hotels = []) {
+export function drawRoute(places, hotels = [], spots = []) {
   if (engine === "google") {
-    drawGoogleRoute(places, hotels);
+    drawGoogleRoute(places, hotels, spots);
     return;
   }
   if (!leafletMap || !leafletMarkers || !leafletRoute) return;
@@ -333,6 +336,9 @@ export function drawRoute(places, hotels = []) {
   const hotelPoints = (hotels || [])
     .filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng))
     .map((hotel) => [hotel.lat, hotel.lng]);
+  const spotPoints = (spots || [])
+    .filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
+    .map((spot) => [spot.lat, spot.lng]);
 
   (hotels || []).forEach((hotel) => {
     if (!Number.isFinite(hotel.lat) || !Number.isFinite(hotel.lng)) return;
@@ -350,6 +356,25 @@ export function drawRoute(places, hotels = []) {
       ${maps ? `<br><a href="${maps}" target="_blank" rel="noopener noreferrer">🗺 구글맵에서 열기</a>` : ""}
     `);
     marker.on("click", () => flyToPlace(hotel));
+    leafletMarkers.addLayer(marker);
+  });
+
+  (spots || []).forEach((spot) => {
+    if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) return;
+    const marker = L.marker([spot.lat, spot.lng], {
+      icon: foodIcon(),
+      title: spot.title || "맛집",
+      zIndexOffset: -5,
+    });
+    const here = googleMapsHereUrl(spot);
+    const maps = googleMapsUrl(spot);
+    marker.bindPopup(`
+      <strong>🍽️ ${escapeHtml(spot.title || "맛집")}</strong>
+      ${spot.note ? `<br>${escapeHtml(spot.note)}` : ""}
+      ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
+      ${maps ? `<br><a href="${maps}" target="_blank" rel="noopener noreferrer">🗺 구글맵에서 열기</a>` : ""}
+    `);
+    marker.on("click", () => flyToPlace(spot));
     leafletMarkers.addLayer(marker);
   });
 
@@ -379,7 +404,7 @@ export function drawRoute(places, hotels = []) {
     }).addTo(leafletRoute);
   }
 
-  const allPoints = [...dayPoints, ...hotelPoints];
+  const allPoints = [...dayPoints, ...hotelPoints, ...spotPoints];
   if (allPoints.length === 1) {
     leafletMap.setView(allPoints[0], 15);
   } else if (allPoints.length > 1) {
@@ -388,10 +413,11 @@ export function drawRoute(places, hotels = []) {
   window.setTimeout(() => leafletMap.invalidateSize(), 60);
 }
 
-async function drawGoogleRoute(places, hotels = []) {
+async function drawGoogleRoute(places, hotels = [], spots = []) {
   if (!googleMap) return;
   lastGooglePlaces = places || [];
   lastGoogleHotels = hotels || [];
+  lastGoogleSpots = spots || [];
   googleMarkers.forEach((marker) => marker.setMap?.(null));
   googleMarkers = [];
   googleLine?.setMap(null);
@@ -405,8 +431,12 @@ async function drawGoogleRoute(places, hotels = []) {
   const hotelPoints = lastGoogleHotels
     .filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng))
     .map((hotel) => ({ lat: hotel.lat, lng: hotel.lng }));
+  const spotPoints = lastGoogleSpots
+    .filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
+    .map((spot) => ({ lat: spot.lat, lng: spot.lng }));
   const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#007aff";
   const hotelColor = getComputedStyle(document.documentElement).getPropertyValue("--accent-2").trim() || "#32c9c9";
+  const foodColor = getComputedStyle(document.documentElement).getPropertyValue("--warn").trim() || "#ff9500";
 
   lastGoogleHotels.forEach((hotel) => {
     if (!Number.isFinite(hotel.lat) || !Number.isFinite(hotel.lng)) return;
@@ -432,6 +462,34 @@ async function drawGoogleRoute(places, hotels = []) {
     });
     marker.addListener("click", () => {
       flyToPlace(hotel);
+    });
+    googleMarkers.push(marker);
+  });
+
+  lastGoogleSpots.forEach((spot) => {
+    if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) return;
+    const marker = new google.maps.Marker({
+      map: googleMap,
+      position: { lat: spot.lat, lng: spot.lng },
+      title: spot.title || "맛집",
+      zIndex: 60,
+      label: {
+        text: "맛",
+        color: "#ffffff",
+        fontWeight: "700",
+        fontSize: "11px",
+      },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: foodColor,
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+        scale: 11,
+      },
+    });
+    marker.addListener("click", () => {
+      flyToPlace(spot);
     });
     googleMarkers.push(marker);
   });
@@ -480,7 +538,7 @@ async function drawGoogleRoute(places, hotels = []) {
     }
   }
 
-  const allPoints = [...dayPoints, ...hotelPoints];
+  const allPoints = [...dayPoints, ...hotelPoints, ...spotPoints];
   if (allPoints.length === 1) {
     googleMap.setCenter(allPoints[0]);
     googleMap.setZoom(15);
@@ -668,6 +726,16 @@ function hotelIcon() {
   return L.divIcon({
     className: "hotel-marker",
     html: "<span>🏨</span>",
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
+  });
+}
+
+function foodIcon() {
+  return L.divIcon({
+    className: "food-marker",
+    html: "<span>🍽️</span>",
     iconSize: [32, 32],
     iconAnchor: [16, 16],
     popupAnchor: [0, -16],
