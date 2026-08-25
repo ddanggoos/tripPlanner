@@ -338,31 +338,6 @@ export function deleteTrip(id) {
   afterDelete?.(trip);
 }
 
-export function exportJson() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "trips.json";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export function importJson(text) {
-  const parsed = JSON.parse(text);
-  if (!parsed || !Array.isArray(parsed.trips)) {
-    throw new Error("trips 배열이 있는 JSON이 필요합니다.");
-  }
-  return setState(parsed);
-}
-
-export function resetToSeed() {
-  state = structuredClone(seed);
-  localStorage.removeItem(STORAGE_KEY);
-  save();
-  return state;
-}
-
 export function dateRange(startDate, endDate) {
   if (!startDate || !endDate) return [];
   const start = parseDate(startDate);

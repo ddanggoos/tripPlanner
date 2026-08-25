@@ -5,9 +5,6 @@ import {
   getTrip,
   upsertTrip,
   deleteTrip,
-  exportJson,
-  importJson,
-  resetToSeed,
   uid,
   dateRange,
   formatDateKo,
@@ -87,7 +84,6 @@ import {
 } from "./sync.js";
 
 const app = document.getElementById("app");
-const fileInput = document.getElementById("import-file");
 
 const SELECTED_DATES_KEY = "tripPlanner:selectedDates";
 
@@ -537,13 +533,6 @@ function renderJoin(shareId) {
   })();
 }
 
-function headerActions() {
-  return `
-    <button type="button" class="text-btn" data-action="export">내보내기</button>
-    <button type="button" class="text-btn" data-action="import">가져오기</button>
-  `;
-}
-
 function renderHome() {
   destroyMap();
   const { trips } = getState();
@@ -568,7 +557,6 @@ function renderHome() {
             <p class="eyebrow">✈️ Trip Planner${cloudLive ? " · ☁️ 실시간" : ""}</p>
             <h1>여행 계획표</h1>
           </div>
-          <div class="topbar-actions">${headerActions()}</div>
         </div>
       </header>
       <main class="content">
@@ -576,7 +564,6 @@ function renderHome() {
         <p class="home-footer">
           ${cloudLive ? `<span class="version-badge">☁️ 클라우드 실시간</span>` : ""}
           <span class="version-badge">🚀 v${APP_VERSION}</span>
-          <button type="button" class="text-btn" data-action="reset-all">샘플로 되돌리기</button>
         </p>
       </main>
       <div class="fab-space"></div>
@@ -1895,15 +1882,6 @@ function onClick(event) {
   const id = btn.dataset.id;
   const trip = id ? getTrip(id) : null;
 
-  if (action === "export") {
-    exportJson();
-    toast("💾 trips.json을 저장했습니다.");
-    return;
-  }
-  if (action === "import") {
-    fileInput.click();
-    return;
-  }
   if (action === "new-trip") {
     go("/new");
     return;
@@ -2482,17 +2460,6 @@ function onClick(event) {
     });
     return;
   }
-  if (action === "reset-all") {
-    openConfirmSheet({
-      title: "샘플로 되돌리기",
-      message: "브라우저에 저장된 내용을 지우고 샘플로 되돌릴까요?",
-      onConfirm: () => {
-        resetToSeed();
-        go("/");
-        render();
-      },
-    });
-  }
 }
 
 function saveFlight(trip, data) {
@@ -2735,19 +2702,6 @@ app.addEventListener("submit", (event) => {
     event.preventDefault();
     const input = form.querySelector("input");
     input?.dispatchEvent(new Event("input"));
-  }
-});
-
-fileInput?.addEventListener("change", async () => {
-  const file = fileInput.files?.[0];
-  fileInput.value = "";
-  if (!file) return;
-  try {
-    importJson(await file.text());
-    toast("📥 JSON을 가져왔습니다.");
-    render();
-  } catch (error) {
-    toast(error.message || "가져오기에 실패했습니다.");
   }
 });
 
