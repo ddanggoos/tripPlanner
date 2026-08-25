@@ -951,37 +951,6 @@ function routeStrip(places, hotels = []) {
     </div>
   `;
 }
-  const mode = getRouteMode();
-  const allNavi = googleMapsDirUrl(pinned, mode, { fromHere: true });
-  return `
-    <div class="route-dock">
-      <div class="route-strip" role="list">
-        ${pinned.map((place, index) => `
-          <div class="route-stop-group" role="listitem">
-            <button
-              type="button"
-              class="route-stop"
-              data-action="fly-place"
-              data-lat="${place.lat}"
-              data-lng="${place.lng}"
-              aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
-            >
-              <span class="route-num">${index + 1}</span>
-              <span class="route-name">${escapeHtml(place.title || "장소")}</span>
-            </button>
-            ${hereNavLink(place, { label: "🧭", className: "route-here" })}
-          </div>
-          ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
-        `).join("")}
-      </div>
-      <div class="route-nav">
-        <button type="button" class="chip ${mode === "WALKING" ? "is-active" : ""}" data-action="route-mode" data-mode="WALKING">🚶 도보</button>
-        <button type="button" class="chip ${mode === "DRIVING" ? "is-active" : ""}" data-action="route-mode" data-mode="DRIVING">🚗 자동차</button>
-        ${pinned.length >= 2 ? `<a class="chip" href="${escapeHtml(allNavi)}" target="_blank" rel="noopener noreferrer">🧭 전체 경로</a>` : ""}
-      </div>
-    </div>
-  `;
-}
 
 function renderMapTab(trip, date) {
   const selected = selectedDateFor(trip, date);
