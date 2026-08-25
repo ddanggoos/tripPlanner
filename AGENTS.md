@@ -22,7 +22,7 @@ There is no lint, unit test, or production-build step in this repo. The GitHub P
 2. **새 여행** → name/destination/dates → **만들기**.
 3. Trip detail tabs: 정보 / 일정 / 지도 / 빙고.
 
-Edits persist in browser `localStorage` (`tripPlanner:data`). **샘플로 되돌리기** reloads `data/trips.json`.
+Edits persist in browser `localStorage` (`tripPlanner:data`). First visit without local data loads `data/trips.json`.
 
 ### Optional cloud pieces (not required to develop)
 
