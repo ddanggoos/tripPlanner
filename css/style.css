@@ -1144,7 +1144,8 @@ a.more-row {
 
 .dock-card {
   flex: 0 0 auto;
-  width: min(220px, 72vw);
+  width: calc((100% - 8px) / 2);
+  max-width: calc((100% - 8px) / 2);
   display: grid;
   gap: 6px;
   padding: 8px 10px;
