@@ -14,9 +14,15 @@ import {
   wasLoadedFromLocal,
   FOOD_FOLDER_ID,
   FOOD_FOLDER_NAME,
+  FOOD_FOLDER_ICON,
+  defaultSpots,
+  randomSpotIcon,
+  normalizeSpotIcon,
   spotsForFolder,
   reindexSpots,
   spotFolderById,
+  spotFolderIcon,
+  foodFolder,
 } from "./storage.js";
 import { initMap, drawRoute, destroyMap, searchPlaces, resolvePlace, flyToPlace, googleMapsUrl, getRouteMode, setRouteMode, googleMapsDirUrl, googleMapsHereUrl } from "./map.js";
 import { renderBingo, completedLines, bingoStatus, bingoReady, emptyBingo, BINGO_CELLS } from "./bingo.js";
@@ -399,7 +405,9 @@ function planSelectionFor(trip, params) {
   }
   const date = selectedDateFor(trip, "");
   if (date) return { kind: "date", date };
-  return { kind: "folder", folderId: FOOD_FOLDER_ID };
+  const firstFolder = trip.spots?.folders?.[0];
+  if (firstFolder) return { kind: "folder", folderId: firstFolder.id };
+  return { kind: "date", date: "" };
 }
 
 function closeSheet() {
@@ -733,7 +741,8 @@ function planChips(trip, selection) {
     <div class="chips" role="tablist" aria-label="일정·폴더">
       ${folders.map((folder) => {
         const active = selection.kind === "folder" && selection.folderId === folder.id;
-        const label = folder.id === FOOD_FOLDER_ID ? `🍽️ ${folder.name}` : folder.name;
+        const icon = spotFolderIcon(trip, folder.id);
+        const label = `${icon} ${folder.name}`;
         return `
           <a class="chip ${active ? "is-active" : ""}" href="${base}?f=${encodeURIComponent(folder.id)}">
             ${escapeHtml(label)}
@@ -754,7 +763,10 @@ function planChips(trip, selection) {
 }
 
 function mapFoodChip(trip) {
+  const folder = foodFolder(trip);
+  if (!folder) return "";
   const on = isMapFoodOn(trip.id);
+  const icon = spotFolderIcon(trip, folder.id);
   return `
     <button
       type="button"
@@ -762,7 +774,7 @@ function mapFoodChip(trip) {
       data-action="toggle-map-food"
       data-id="${trip.id}"
       aria-pressed="${on ? "true" : "false"}"
-    >🍽️ 맛집</button>
+    >${escapeHtml(`${icon} ${folder.name}`)}</button>
   `;
 }
 
@@ -1032,10 +1044,11 @@ function spotCard(trip, spot) {
   const hasGeo = Number.isFinite(spot.lat) && Number.isFinite(spot.lng);
   const days = daysOf(trip);
   const scheduleLabel = spot.scheduled ? "일정 추가 완료" : "일정 추가 전";
+  const icon = spotFolderIcon(trip, spot.folderId);
   return `
     <article class="place-card">
       <button type="button" class="place-edit" data-action="edit-spot" data-id="${trip.id}" data-item="${spot.id}">
-        <span class="place-num spot-num">🍽️</span>
+        <span class="place-num spot-num">${escapeHtml(icon)}</span>
         <span class="place-copy">
           <h3>${escapeHtml(spot.title || "장소")}</h3>
           <p class="meta">${hasGeo ? "위치 저장됨" : "위치 없음"} · ${scheduleLabel}</p>
@@ -1052,13 +1065,14 @@ function spotCard(trip, spot) {
 }
 
 function folderToolbar(trip, folderId) {
-  if (!folderId || folderId === FOOD_FOLDER_ID) return "";
+  if (!folderId) return "";
   const folder = spotFolderById(trip, folderId);
   if (!folder) return "";
+  const icon = spotFolderIcon(trip, folderId);
   return `
     <div class="shop-nav">
-      <strong class="shop-nav-title">${escapeHtml(folder.name)}</strong>
-      <button type="button" class="text-btn" data-action="rename-spot-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">이름</button>
+      <strong class="shop-nav-title">${escapeHtml(`${icon} ${folder.name}`)}</strong>
+      <button type="button" class="text-btn" data-action="rename-spot-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">수정</button>
       <button type="button" class="text-btn danger-text" data-action="delete-spot-folder" data-id="${trip.id}" data-folder="${escapeHtml(folderId)}">삭제</button>
     </div>
   `;
@@ -1072,6 +1086,7 @@ function renderPlan(trip, params) {
   const spots = isFolder ? spotsForFolder(trip, folderId) : [];
   const places = selected ? placesForDate(trip, selected) : [];
   const folder = isFolder ? spotFolderById(trip, folderId) : null;
+  const folderIcon = folder ? spotFolderIcon(trip, folderId) : FOOD_FOLDER_ICON;
   const folderLabel = folder?.name || FOOD_FOLDER_NAME;
   const canAdd = isFolder || Boolean(selected);
   app.innerHTML = `
@@ -1095,7 +1110,7 @@ function renderPlan(trip, params) {
         ${isFolder
           ? (spots.length
             ? spots.map((spot) => spotCard(trip, spot)).join("")
-            : `<div class="empty compact"><span class="empty-icon">🍽️</span>${escapeHtml(folderLabel)}에 저장된 장소가 없습니다. 후보로 모아 두고 일정에 넣을 수 있어요.</div>`)
+            : `<div class="empty compact"><span class="empty-icon">${escapeHtml(folderIcon)}</span>${escapeHtml(folderLabel)}에 저장된 장소가 없습니다. 후보로 모아 두고 일정에 넣을 수 있어요.</div>`)
           : (selected
             ? (places.length
               ? places.map((place, index) => placeCard(trip, place, index, places.length)).join("")
@@ -1145,7 +1160,7 @@ function mapShortcutItems(trip) {
       lat: spot.lat,
       lng: spot.lng,
       placeId: spot.placeId || "",
-      badge: spot.folderId === FOOD_FOLDER_ID ? "🍽️" : "📌",
+      badge: spotFolderIcon(trip, spot.folderId),
       label: spot.title || "장소",
     }));
   return [...hotels, ...spots];
@@ -1248,9 +1263,14 @@ function renderMapTab(trip, date) {
   const selected = selectedDateFor(trip, date);
   const places = selected ? placesForDate(trip, selected) : [];
   const hotels = mappedHotels(trip);
-  const foodOn = isMapFoodOn(trip.id);
+  const foodOn = Boolean(foodFolder(trip)) && isMapFoodOn(trip.id);
   const foodSpots = foodOn
-    ? spotsForFolder(trip, FOOD_FOLDER_ID).filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
+    ? spotsForFolder(trip, FOOD_FOLDER_ID)
+      .filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
+      .map((spot) => ({
+        ...spot,
+        icon: spotFolderIcon(trip, spot.folderId),
+      }))
     : [];
   const shortcuts = mapShortcutItems(trip);
   const hasMapContent = Boolean(selected || hotels.length || foodSpots.length);
@@ -2080,7 +2100,7 @@ function spotForm(spot = {}) {
   return `
     <form class="stack-form" data-form="spot">
       <input type="hidden" name="id" value="${spot.id || ""}">
-      <input type="hidden" name="folderId" value="${escapeHtml(spot.folderId || FOOD_FOLDER_ID)}">
+      <input type="hidden" name="folderId" value="${escapeHtml(spot.folderId || "")}">
       <input type="hidden" name="lat" value="${spot.lat ?? ""}">
       <input type="hidden" name="lng" value="${spot.lng ?? ""}">
       <input type="hidden" name="placeId" value="${escapeHtml(spot.placeId || "")}">
@@ -2127,11 +2147,19 @@ function openPlaceSheet(trip, defaults) {
 }
 
 function openSpotSheet(trip, defaults) {
-  const folder = spotFolderById(trip, defaults.folderId) || spotFolderById(trip, FOOD_FOLDER_ID);
-  const label = folder?.name || FOOD_FOLDER_NAME;
-  const sheet = openSheet(defaults.id ? `🍽️ ${label} 수정` : `🍽️ ${label} 추가`, spotForm({
+  const folder = spotFolderById(trip, defaults.folderId)
+    || foodFolder(trip)
+    || trip.spots?.folders?.[0]
+    || null;
+  if (!folder) {
+    toast("폴더를 먼저 추가하세요.");
+    return;
+  }
+  const icon = spotFolderIcon(trip, folder.id);
+  const label = folder.name || FOOD_FOLDER_NAME;
+  const sheet = openSheet(defaults.id ? `${icon} ${label} 수정` : `${icon} ${label} 추가`, spotForm({
     ...defaults,
-    folderId: folder?.id || FOOD_FOLDER_ID,
+    folderId: folder.id,
   }));
   const form = sheet.querySelector("form");
   form.addEventListener("submit", (event) => {
@@ -2142,6 +2170,47 @@ function openSpotSheet(trip, defaults) {
     input: sheet.querySelector("[data-place-lookup]"),
     results: sheet.querySelector("[data-place-suggest]"),
     onPick: (item) => fillPlaceFields(form, item),
+  });
+}
+
+function openSpotFolderSheet(trip, folder = null) {
+  const editing = Boolean(folder);
+  const sheet = openSheet(editing ? "폴더 수정" : "폴더 추가", `
+    <form class="stack-form" data-form="spot-folder">
+      <label>폴더 이름
+        <input type="text" name="name" required maxlength="40" value="${escapeHtml(folder?.name || "")}" placeholder="예: 카페, 쇼핑">
+      </label>
+      <label>아이콘 (이모지)
+        <input type="text" name="icon" maxlength="8" value="${escapeHtml(folder?.icon || "")}" placeholder="비우면 랜덤" autocomplete="off">
+      </label>
+      <p class="hint">비워 두면 랜덤 이모지가 붙어요. 지도·일정 칩에도 같이 보여요.</p>
+      <button type="submit" class="primary-btn">${editing ? "저장" : "추가"}</button>
+    </form>
+  `);
+  sheet.querySelector("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = new FormData(event.target);
+    const name = String(data.get("name") || "").trim();
+    if (!name) return;
+    const iconRaw = String(data.get("icon") || "").trim();
+    const icon = iconRaw ? normalizeSpotIcon(iconRaw, randomSpotIcon()) : randomSpotIcon();
+    trip.spots = trip.spots || defaultSpots();
+    trip.spots.folders = trip.spots.folders || [];
+    if (editing) {
+      folder.name = name;
+      folder.icon = icon;
+      upsertTrip(trip);
+      closeSheet();
+      render();
+      return;
+    }
+    const next = { id: uid("pfol"), name, icon };
+    trip.spots.folders.push(next);
+    upsertTrip(trip);
+    selectedFolders[trip.id] = next.id;
+    saveSelectedFolders();
+    closeSheet();
+    go(`/trip/${trip.id}/plan?f=${encodeURIComponent(next.id)}`);
   });
 }
 
@@ -2189,8 +2258,8 @@ function savePlace(trip, formData) {
 }
 
 function saveSpot(trip, formData) {
-  trip.spots = trip.spots || { folders: [{ id: FOOD_FOLDER_ID, name: FOOD_FOLDER_NAME }], items: [] };
-  const folderId = String(formData.get("folderId") || FOOD_FOLDER_ID);
+  trip.spots = trip.spots || defaultSpots();
+  const folderId = String(formData.get("folderId") || "");
   if (!spotFolderById(trip, folderId)) {
     toast("폴더를 찾을 수 없습니다.");
     return;
@@ -2244,7 +2313,7 @@ function openScheduleSpotSheet(trip, spot) {
     : days[0];
   const sheet = openSheet("🗓️ 일정으로 등록", `
     <form class="stack-form" data-form="schedule-spot">
-      <p class="hint">“${escapeHtml(spot.title || "장소")}”를 선택한 날짜 일정에 추가합니다. 맛집 목록에는 그대로 남아요.</p>
+      <p class="hint">“${escapeHtml(spot.title || "장소")}”를 선택한 날짜 일정에 추가합니다. 폴더 목록에는 그대로 남아요.</p>
       <label>날짜
         <select name="date" required>
           ${days.map((date) => `
@@ -2469,8 +2538,13 @@ function onClick(event) {
     return;
   }
   if (action === "add-spot" && trip) {
-    const folderId = String(btn.dataset.folder || selectedFolders[trip.id] || FOOD_FOLDER_ID);
-    openSpotSheet(trip, { folderId: spotFolderById(trip, folderId)?.id || FOOD_FOLDER_ID });
+    const folderId = String(btn.dataset.folder || selectedFolders[trip.id] || "");
+    const folder = spotFolderById(trip, folderId) || foodFolder(trip) || trip.spots?.folders?.[0];
+    if (!folder) {
+      toast("폴더를 먼저 추가하세요.");
+      return;
+    }
+    openSpotSheet(trip, { folderId: folder.id });
     return;
   }
   if (action === "edit-spot" && trip) {
@@ -2509,54 +2583,37 @@ function onClick(event) {
     return;
   }
   if (action === "add-spot-folder" && trip) {
-    openPromptSheet({
-      title: "폴더 추가",
-      label: "폴더 이름",
-      value: "",
-      saveLabel: "추가",
-      onSave: (name) => {
-        trip.spots = trip.spots || { folders: [{ id: FOOD_FOLDER_ID, name: FOOD_FOLDER_NAME }], items: [] };
-        trip.spots.folders = trip.spots.folders || [];
-        const folder = { id: uid("pfol"), name };
-        trip.spots.folders.push(folder);
-        upsertTrip(trip);
-        selectedFolders[trip.id] = folder.id;
-        saveSelectedFolders();
-        go(`/trip/${trip.id}/plan?f=${encodeURIComponent(folder.id)}`);
-      },
-    });
+    openSpotFolderSheet(trip);
     return;
   }
   if (action === "rename-spot-folder" && trip) {
     const folder = (trip.spots?.folders || []).find((entry) => entry.id === btn.dataset.folder);
-    if (!folder || folder.id === FOOD_FOLDER_ID) return;
-    openPromptSheet({
-      title: "폴더 이름",
-      label: "이름",
-      value: folder.name,
-      onSave: (name) => {
-        folder.name = name;
-        upsertTrip(trip);
-        render();
-      },
-    });
+    if (!folder) return;
+    openSpotFolderSheet(trip, folder);
     return;
   }
   if (action === "delete-spot-folder" && trip) {
     const folder = (trip.spots?.folders || []).find((entry) => entry.id === btn.dataset.folder);
-    if (!folder || folder.id === FOOD_FOLDER_ID) return;
+    if (!folder) return;
     openConfirmSheet({
       title: "폴더 삭제",
       message: `“${folder.name}” 폴더를 지울까요? 안의 장소도 함께 삭제됩니다.`,
       onConfirm: () => {
-        trip.spots.folders = (trip.spots?.folders || []).filter((entry) => entry.id !== folder.id);
-        trip.spots.items = (trip.spots?.items || []).filter((item) => item.folderId !== folder.id);
+        trip.spots = trip.spots || defaultSpots();
+        trip.spots.folders = (trip.spots.folders || []).filter((entry) => entry.id !== folder.id);
+        trip.spots.items = (trip.spots.items || []).filter((item) => item.folderId !== folder.id);
         if (selectedFolders[trip.id] === folder.id) {
-          selectedFolders[trip.id] = FOOD_FOLDER_ID;
+          delete selectedFolders[trip.id];
           saveSelectedFolders();
         }
         upsertTrip(trip);
-        go(`/trip/${trip.id}/plan?f=${FOOD_FOLDER_ID}`);
+        const nextFolder = trip.spots.folders[0];
+        if (nextFolder) {
+          go(`/trip/${trip.id}/plan?f=${encodeURIComponent(nextFolder.id)}`);
+          return;
+        }
+        const nextDate = daysOf(trip)[0];
+        go(nextDate ? `/trip/${trip.id}/plan?d=${nextDate}` : `/trip/${trip.id}/plan`);
       },
     });
     return;

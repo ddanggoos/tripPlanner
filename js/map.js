@@ -361,15 +361,16 @@ export function drawRoute(places, hotels = [], spots = []) {
 
   (spots || []).forEach((spot) => {
     if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) return;
+    const icon = spot.icon || "📌";
     const marker = L.marker([spot.lat, spot.lng], {
-      icon: foodIcon(),
-      title: spot.title || "맛집",
+      icon: spotMarkerIcon(icon),
+      title: spot.title || "장소",
       zIndexOffset: -5,
     });
     const here = googleMapsHereUrl(spot);
     const maps = googleMapsUrl(spot);
     marker.bindPopup(`
-      <strong>🍽️ ${escapeHtml(spot.title || "맛집")}</strong>
+      <strong>${escapeHtml(icon)} ${escapeHtml(spot.title || "장소")}</strong>
       ${spot.note ? `<br>${escapeHtml(spot.note)}` : ""}
       ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
       ${maps ? `<br><a href="${maps}" target="_blank" rel="noopener noreferrer">🗺 구글맵에서 열기</a>` : ""}
@@ -468,16 +469,15 @@ async function drawGoogleRoute(places, hotels = [], spots = []) {
 
   lastGoogleSpots.forEach((spot) => {
     if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) return;
+    const icon = spot.icon || "📌";
     const marker = new google.maps.Marker({
       map: googleMap,
       position: { lat: spot.lat, lng: spot.lng },
-      title: spot.title || "맛집",
+      title: spot.title || "장소",
       zIndex: 60,
       label: {
-        text: "맛",
-        color: "#ffffff",
-        fontWeight: "700",
-        fontSize: "11px",
+        text: icon,
+        fontSize: "16px",
       },
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
@@ -485,7 +485,7 @@ async function drawGoogleRoute(places, hotels = [], spots = []) {
         fillOpacity: 1,
         strokeColor: "#ffffff",
         strokeWeight: 2,
-        scale: 11,
+        scale: 14,
       },
     });
     marker.addListener("click", () => {
@@ -732,10 +732,10 @@ function hotelIcon() {
   });
 }
 
-function foodIcon() {
+function spotMarkerIcon(emoji = "📌") {
   return L.divIcon({
     className: "food-marker",
-    html: "<span>🍽️</span>",
+    html: `<span>${escapeHtml(emoji)}</span>`,
     iconSize: [32, 32],
     iconAnchor: [16, 16],
     popupAnchor: [0, -16],

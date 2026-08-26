@@ -242,15 +242,66 @@ function normalizeOutfit(raw = {}) {
 
 export const FOOD_FOLDER_ID = "food";
 export const FOOD_FOLDER_NAME = "맛집";
+export const FOOD_FOLDER_ICON = "🍽️";
+export const SPOT_FOLDER_ICON_FALLBACK = "📌";
+
+const SPOT_ICON_POOL = [
+  "📍", "🍜", "🍣", "☕", "🍺", "🍰", "🏛️", "🎡",
+  "🛍️", "🌳", "🏖️", "🎨", "♨️", "🎭", "📸", "🍕",
+  "🥟", "🍦", "🥐", "🧃", "🏕️", "🗽",
+];
+
+export function randomSpotIcon() {
+  return SPOT_ICON_POOL[Math.floor(Math.random() * SPOT_ICON_POOL.length)];
+}
+
+export function normalizeSpotIcon(raw, fallback = SPOT_FOLDER_ICON_FALLBACK) {
+  const text = String(raw || "").trim();
+  if (!text) return fallback;
+  if (typeof Intl !== "undefined" && Intl.Segmenter) {
+    const first = [...new Intl.Segmenter("ko", { granularity: "grapheme" }).segment(text)][0]?.segment;
+    if (first) return first;
+  }
+  return [...text][0] || fallback;
+}
+
+export function defaultFoodFolder() {
+  return { id: FOOD_FOLDER_ID, name: FOOD_FOLDER_NAME, icon: FOOD_FOLDER_ICON };
+}
+
+export function defaultSpots() {
+  return { folders: [defaultFoodFolder()], items: [] };
+}
+
+function defaultIconForFolder(folder = {}) {
+  if (folder.id === FOOD_FOLDER_ID || folder.name === FOOD_FOLDER_NAME) return FOOD_FOLDER_ICON;
+  return SPOT_FOLDER_ICON_FALLBACK;
+}
+
+function normalizeSpotFolders(rawFolders, { seedDefault = true } = {}) {
+  const source = Array.isArray(rawFolders) ? rawFolders : [];
+  if (!source.length) return seedDefault ? [defaultFoodFolder()] : [];
+  const seen = new Set();
+  return source.map((item, index) => {
+    const id = String(item?.id || uid("pfol"));
+    const name = String(item?.name || `폴더 ${index + 1}`).trim() || `폴더 ${index + 1}`;
+    const icon = normalizeSpotIcon(item?.icon, defaultIconForFolder({ id, name }));
+    return { id, name, icon };
+  }).filter((folder) => {
+    if (!folder.id || seen.has(folder.id)) return false;
+    seen.add(folder.id);
+    return true;
+  });
+}
 
 function normalizeSpots(raw = {}) {
-  const folders = normalizeNamedList(raw.folders, "pfol")
-    .filter((folder) => folder.id !== FOOD_FOLDER_ID);
-  folders.unshift({ id: FOOD_FOLDER_ID, name: FOOD_FOLDER_NAME });
+  const hasFoldersKey = Boolean(raw) && Object.prototype.hasOwnProperty.call(raw, "folders");
+  const folders = normalizeSpotFolders(raw.folders, { seedDefault: !hasFoldersKey });
   const folderIds = new Set(folders.map((folder) => folder.id));
+  const fallbackFolderId = folders[0]?.id || "";
   const source = Array.isArray(raw.items) ? raw.items : [];
   const items = source.map((item, index) => {
-    const folderId = folderIds.has(item.folderId) ? item.folderId : FOOD_FOLDER_ID;
+    const folderId = folderIds.has(item.folderId) ? item.folderId : fallbackFolderId;
     const lat = Number(item.lat);
     const lng = Number(item.lng);
     return {
@@ -264,12 +315,13 @@ function normalizeSpots(raw = {}) {
       placeId: String(item.placeId || "").trim(),
       scheduled: Boolean(item.scheduled),
     };
-  });
+  }).filter((item) => item.folderId);
   return { folders, items };
 }
 
 export function spotsForFolder(trip, folderId) {
-  const id = folderId || FOOD_FOLDER_ID;
+  const id = folderId || "";
+  if (!id) return [];
   return (trip.spots?.items || [])
     .filter((item) => item.folderId === id)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -283,6 +335,16 @@ export function reindexSpots(trip, folderId) {
 
 export function spotFolderById(trip, folderId) {
   return (trip.spots?.folders || []).find((folder) => folder.id === folderId) || null;
+}
+
+export function spotFolderIcon(trip, folderId) {
+  const folder = spotFolderById(trip, folderId);
+  if (!folder) return SPOT_FOLDER_ICON_FALLBACK;
+  return normalizeSpotIcon(folder.icon, defaultIconForFolder(folder));
+}
+
+export function foodFolder(trip) {
+  return spotFolderById(trip, FOOD_FOLDER_ID);
 }
 
 function normalizeState(raw) {
