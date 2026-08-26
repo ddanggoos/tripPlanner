@@ -93,6 +93,7 @@ const app = document.getElementById("app");
 const SELECTED_DATES_KEY = "tripPlanner:selectedDates";
 const SELECTED_FOLDERS_KEY = "tripPlanner:selectedFolders";
 const MAP_FOOD_KEY = "tripPlanner:mapFood";
+const MAP_DOCK_TAB_KEY = "tripPlanner:mapDockTab";
 
 function loadSelectedDates() {
   try {
@@ -149,6 +150,30 @@ function isMapFoodOn(tripId) {
 function setMapFoodOn(tripId, on) {
   mapFoodOn[tripId] = Boolean(on);
   saveMapFood();
+}
+
+function loadMapDockTabs() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MAP_DOCK_TAB_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function saveMapDockTabs() {
+  localStorage.setItem(MAP_DOCK_TAB_KEY, JSON.stringify(mapDockTabs));
+}
+
+function mapDockTabFor(tripId) {
+  return mapDockTabs[tripId] === "pins" ? "pins" : "plan";
+}
+
+function setMapDockTab(tripId, tab) {
+  if (!tripId) return;
+  mapDockTabs[tripId] = tab === "pins" ? "pins" : "plan";
+  saveMapDockTabs();
 }
 
 const FOLD_KEY = "tripPlanner:folds";
@@ -249,6 +274,7 @@ function animateFold(el, open) {
 let selectedDates = loadSelectedDates();
 let selectedFolders = loadSelectedFolders();
 let mapFoodOn = loadMapFood();
+let mapDockTabs = loadMapDockTabs();
 let searchTimer = null;
 let toastTimer = null;
 
@@ -1081,97 +1107,138 @@ function renderPlan(trip, params) {
   `;
 }
 
-function hotelFlyRow(hotels) {
-  if (!hotels.length) return "";
-  return hotels.map((hotel) => `
-    <button
-      type="button"
-      class="route-hotel"
-      role="listitem"
-      data-action="fly-place"
-      data-lat="${hotel.lat}"
-      data-lng="${hotel.lng}"
-      aria-label="숙소 ${escapeHtml(hotel.title || "숙소")} 위치로 이동"
-    >
-      <span aria-hidden="true">🏨</span>
-      <span class="route-name">${escapeHtml(hotel.title || "숙소")}</span>
-    </button>
-  `).join("");
-}
-
-function foodFlyRow(foods) {
-  if (!foods.length) return "";
-  return foods.map((spot) => `
-    <button
-      type="button"
-      class="route-hotel route-food"
-      role="listitem"
-      data-action="fly-place"
-      data-lat="${spot.lat}"
-      data-lng="${spot.lng}"
-      aria-label="맛집 ${escapeHtml(spot.title || "맛집")} 위치로 이동"
-    >
-      <span aria-hidden="true">🍽️</span>
-      <span class="route-name">${escapeHtml(spot.title || "맛집")}</span>
-    </button>
-  `).join("");
-}
-
-function pinFlyRow(hotels = [], foods = []) {
-  const hotelPins = hotels.filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng));
-  const foodPins = foods.filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng));
-  if (!hotelPins.length && !foodPins.length) return "";
+function routeModeToggle() {
+  const mode = getRouteMode();
   return `
-    <div class="route-hotels" role="list" aria-label="숙소·맛집">
-      ${hotelFlyRow(hotelPins)}
-      ${foodFlyRow(foodPins)}
+    <div class="route-mode-toggle" role="group" aria-label="이동 수단">
+      <button
+        type="button"
+        class="route-mode-btn ${mode === "WALKING" ? "is-active" : ""}"
+        data-action="route-mode"
+        data-mode="WALKING"
+        aria-pressed="${mode === "WALKING" ? "true" : "false"}"
+        aria-label="도보"
+      >🚶</button>
+      <button
+        type="button"
+        class="route-mode-btn ${mode === "DRIVING" ? "is-active" : ""}"
+        data-action="route-mode"
+        data-mode="DRIVING"
+        aria-pressed="${mode === "DRIVING" ? "true" : "false"}"
+        aria-label="자동차"
+      >🚗</button>
     </div>
   `;
 }
 
-function routeStrip(places, hotels = [], foods = []) {
-  const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
-  const hotelPins = hotels.filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng));
-  const foodPins = foods.filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng));
-  const pinsRow = pinFlyRow(hotelPins, foodPins);
-  if (!pinned.length) {
-    if (hotelPins.length || foodPins.length) {
-      return `
-        <div class="route-dock">
-          ${pinsRow}
-        </div>
-      `;
-    }
-    return `<p class="map-hint">📍 지도를 누르거나 장소 이름·구글맵 링크로 추가하세요.</p>`;
+function mapShortcutItems(trip) {
+  const hotels = mappedHotels(trip).map((hotel) => ({
+    ...hotel,
+    badge: "🏨",
+    label: hotel.title || "숙소",
+  }));
+  const spots = (trip.spots?.items || [])
+    .filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
+    .map((spot) => ({
+      title: spot.title || "장소",
+      note: spot.note || "",
+      lat: spot.lat,
+      lng: spot.lng,
+      placeId: spot.placeId || "",
+      badge: spot.folderId === FOOD_FOLDER_ID ? "🍽️" : "📌",
+      label: spot.title || "장소",
+    }));
+  return [...hotels, ...spots];
+}
+
+function mapDockCard({ badgeHtml, title, place, ariaLabel }) {
+  const canFly = Number.isFinite(place?.lat) && Number.isFinite(place?.lng);
+  const head = canFly
+    ? `<button
+        type="button"
+        class="dock-card-head"
+        data-action="fly-place"
+        data-lat="${place.lat}"
+        data-lng="${place.lng}"
+        aria-label="${escapeHtml(ariaLabel || title)}"
+      >
+        ${badgeHtml}
+        <span class="dock-card-title">${escapeHtml(title)}</span>
+      </button>`
+    : `<div class="dock-card-head is-static">
+        ${badgeHtml}
+        <span class="dock-card-title">${escapeHtml(title)}</span>
+      </div>`;
+  return `
+    <article class="dock-card">
+      ${head}
+      <div class="dock-card-actions">
+        ${placeNavLinks(place)}
+      </div>
+    </article>
+  `;
+}
+
+function mapDockPlanList(places) {
+  if (!places.length) {
+    return `<div class="dock-empty">이 날 일정이 없습니다. 일정 탭에서 추가하거나 지도를 눌러 보세요.</div>`;
   }
-  const mode = getRouteMode();
-  const allNavi = googleMapsDirUrl(pinned, mode, { fromHere: true });
+  return places.map((place, index) => mapDockCard({
+    badgeHtml: `<span class="dock-card-num">${index + 1}</span>`,
+    title: place.title || "장소",
+    place,
+    ariaLabel: `${index + 1} ${place.title || "장소"} 위치로 이동`,
+  })).join("");
+}
+
+function mapDockPinsList(items) {
+  if (!items.length) {
+    return `<div class="dock-empty">숙소·맛집 등 바로가기 장소가 없습니다.</div>`;
+  }
+  return items.map((item) => mapDockCard({
+    badgeHtml: `<span class="dock-card-icon" aria-hidden="true">${item.badge}</span>`,
+    title: item.label || item.title || "장소",
+    place: item,
+    ariaLabel: `${item.label || item.title || "장소"} 위치로 이동`,
+  })).join("");
+}
+
+function mapDock(trip, places, shortcuts) {
+  const tab = mapDockTabFor(trip.id);
+  const pinned = places.filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng));
+  const allNavi = pinned.length >= 2
+    ? googleMapsDirUrl(pinned, getRouteMode(), { fromHere: true })
+    : "";
+  const list = tab === "pins"
+    ? mapDockPinsList(shortcuts)
+    : mapDockPlanList(places);
   return `
     <div class="route-dock">
-      ${pinsRow}
-      <div class="route-strip" role="list">
-        ${pinned.map((place, index) => `
-          <div class="route-stop-group" role="listitem">
-            <button
-              type="button"
-              class="route-stop"
-              data-action="fly-place"
-              data-lat="${place.lat}"
-              data-lng="${place.lng}"
-              aria-label="${index + 1} ${escapeHtml(place.title || "장소")}"
-            >
-              <span class="route-num">${index + 1}</span>
-              <span class="route-name">${escapeHtml(place.title || "장소")}</span>
-            </button>
-            ${hereNavLink(place, { label: "🧭", className: "route-here" })}
-          </div>
-          ${index < pinned.length - 1 ? `<span class="route-arrow" aria-hidden="true">→</span>` : ""}
-        `).join("")}
+      <div class="dock-tabs" role="tablist" aria-label="지도 목록">
+        <button
+          type="button"
+          class="dock-tab ${tab === "plan" ? "is-active" : ""}"
+          role="tab"
+          aria-selected="${tab === "plan" ? "true" : "false"}"
+          data-action="map-dock-tab"
+          data-id="${trip.id}"
+          data-tab="plan"
+        >일정</button>
+        <button
+          type="button"
+          class="dock-tab ${tab === "pins" ? "is-active" : ""}"
+          role="tab"
+          aria-selected="${tab === "pins" ? "true" : "false"}"
+          data-action="map-dock-tab"
+          data-id="${trip.id}"
+          data-tab="pins"
+        >바로가기</button>
+        ${allNavi && tab === "plan"
+          ? `<a class="dock-all-route" href="${escapeHtml(allNavi)}" target="_blank" rel="noopener noreferrer">🧭 전체</a>`
+          : ""}
       </div>
-      <div class="route-nav">
-        <button type="button" class="chip ${mode === "WALKING" ? "is-active" : ""}" data-action="route-mode" data-mode="WALKING">🚶 도보</button>
-        <button type="button" class="chip ${mode === "DRIVING" ? "is-active" : ""}" data-action="route-mode" data-mode="DRIVING">🚗 자동차</button>
-        ${pinned.length >= 2 ? `<a class="chip" href="${escapeHtml(allNavi)}" target="_blank" rel="noopener noreferrer">🧭 전체 경로</a>` : ""}
+      <div class="dock-list" role="list">
+        ${list}
       </div>
     </div>
   `;
@@ -1185,14 +1252,18 @@ function renderMapTab(trip, date) {
   const foodSpots = foodOn
     ? spotsForFolder(trip, FOOD_FOLDER_ID).filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
     : [];
+  const shortcuts = mapShortcutItems(trip);
   const hasMapContent = Boolean(selected || hotels.length || foodSpots.length);
+  const dock = selected || shortcuts.length
+    ? mapDock(trip, places, shortcuts)
+    : `<p class="map-hint">📍 지도를 누르거나 장소 이름·구글맵 링크로 추가하세요.</p>`;
   app.innerHTML = `
     <div class="screen map-screen">
       <header class="topbar overlay">
         <div class="topbar-inner">
           ${topbarLink("#/", "목록")}
           <div class="topbar-title"><h1>🗺️ 지도</h1></div>
-          ${topbarSpacer()}
+          ${routeModeToggle()}
         </div>
         <div class="map-tools">
           ${mapChips(trip, selected, `#/trip/${trip.id}/map`)}
@@ -1203,7 +1274,7 @@ function renderMapTab(trip, date) {
         </div>
       </header>
       <div id="map" class="map-canvas" role="application" aria-label="일정 지도"></div>
-      ${routeStrip(places, hotels, foodSpots)}
+      ${dock}
       ${tabbar(trip, "map")}
     </div>
   `;
@@ -2257,6 +2328,11 @@ function onClick(event) {
   }
   if (action === "route-mode") {
     setRouteMode(btn.dataset.mode);
+    render();
+    return;
+  }
+  if (action === "map-dock-tab") {
+    setMapDockTab(btn.dataset.id, btn.dataset.tab);
     render();
     return;
   }
