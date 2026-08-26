@@ -1122,11 +1122,11 @@ a.more-row {
 }
 
 .dock-list {
-  display: grid;
-  gap: 6px;
-  align-content: start;
-  overflow-x: hidden;
-  overflow-y: auto;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 0 2px 2px;
   scrollbar-width: none;
@@ -1135,6 +1135,7 @@ a.more-row {
 .dock-list::-webkit-scrollbar { display: none; }
 
 .dock-empty {
+  flex: 1 0 100%;
   padding: 10px 8px;
   color: var(--muted);
   font-size: 12px;
@@ -1142,6 +1143,9 @@ a.more-row {
 }
 
 .dock-card {
+  flex: 0 0 auto;
+  width: calc(50% - 10px);
+  max-width: calc(50% - 10px);
   display: grid;
   gap: 6px;
   padding: 8px 10px;
