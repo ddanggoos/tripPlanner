@@ -347,6 +347,34 @@ export function foodFolder(trip) {
   return spotFolderById(trip, FOOD_FOLDER_ID);
 }
 
+/** 지도 레이어·칩에서 폴더를 구분하는 색. 폴더 순서대로 돌려 씁니다. */
+export const SPOT_FOLDER_COLORS = [
+  "#ff9500",
+  "#af52de",
+  "#34c759",
+  "#ff2d55",
+  "#5856d6",
+  "#00a6a6",
+  "#d4a000",
+  "#a2845e",
+];
+
+export function spotFolderColor(trip, folderId) {
+  const folders = trip.spots?.folders || [];
+  const index = folders.findIndex((folder) => folder.id === folderId);
+  if (index < 0) return SPOT_FOLDER_COLORS[0];
+  return SPOT_FOLDER_COLORS[index % SPOT_FOLDER_COLORS.length];
+}
+
+/** 이 장소 후보가 들어간 일정 날짜들 (일정 쪽 spotId 기준). */
+export function spotScheduledDates(trip, spot) {
+  const dates = (trip.places || [])
+    .filter((place) => place.spotId && place.spotId === spot.id)
+    .map((place) => place.date)
+    .filter(Boolean);
+  return [...new Set(dates)].sort();
+}
+
 function normalizeState(raw) {
   const trips = Array.isArray(raw?.trips) ? raw.trips.map(normalizeTrip) : [];
   return { trips };
@@ -355,6 +383,7 @@ function normalizeState(raw) {
 let afterSave = null;
 let afterDelete = null;
 let afterStateChange = null;
+let onStorageError = null;
 
 export function setSyncHooks({ onSave, onDelete, onStateChange } = {}) {
   afterSave = onSave || null;
@@ -362,17 +391,47 @@ export function setSyncHooks({ onSave, onDelete, onStateChange } = {}) {
   afterStateChange = onStateChange || null;
 }
 
+/** 브라우저 저장 공간이 꽉 찼을 때(사진이 많을 때) 화면에 알리기 위한 훅. */
+export function setStorageErrorHandler(handler) {
+  onStorageError = handler || null;
+}
+
 export function getState() {
   return state;
 }
 
 export function save(options = {}) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn("local save failed", error);
+    onStorageError?.(error);
+  }
   if (!options.silent) afterStateChange?.(state);
 }
 
+/**
+ * 같은 여행은 객체를 새로 만들지 않고 내용만 바꿉니다.
+ * 열려 있는 시트가 들고 있는 trip 참조가 최신 데이터를 보게 되어,
+ * 저장할 때 상대방이 방금 바꾼 내용을 옛 값으로 덮어쓰지 않습니다.
+ */
+function assignTrip(target, next) {
+  Object.keys(target).forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(next, key)) delete target[key];
+  });
+  Object.assign(target, next);
+  return target;
+}
+
 export function setState(next, options = {}) {
-  state = normalizeState(next);
+  const normalized = normalizeState(next);
+  const current = new Map(state.trips.map((trip) => [trip.id, trip]));
+  state = {
+    trips: normalized.trips.map((trip) => {
+      const existing = current.get(trip.id);
+      return existing ? assignTrip(existing, trip) : trip;
+    }),
+  };
   save({ silent: options.fromRemote });
   return state;
 }
@@ -384,7 +443,12 @@ export function wasLoadedFromLocal() {
 }
 
 export async function initStorage() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  let saved = null;
+  try {
+    saved = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    saved = null;
+  }
   let parsedSaved = null;
   try {
     parsedSaved = saved ? JSON.parse(saved) : null;
@@ -432,11 +496,12 @@ export function upsertTrip(trip, options = {}) {
   const index = state.trips.findIndex((item) => (
     item.id === next.id || (next.shareId && item.shareId === next.shareId)
   ));
-  if (index >= 0) state.trips[index] = next;
+  if (index >= 0) state.trips[index] = assignTrip(state.trips[index], next);
   else state.trips.unshift(next);
   save();
-  if (!options.fromRemote) afterSave?.(next);
-  return next;
+  const saved = index >= 0 ? state.trips[index] : next;
+  if (!options.fromRemote) afterSave?.(saved);
+  return saved;
 }
 
 export function deleteTrip(id) {

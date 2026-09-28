@@ -27,13 +27,18 @@ let autocompleteToken = null;
 const ROUTE_MODE_KEY = "tripPlanner:routeMode";
 
 export function getRouteMode() {
-  return localStorage.getItem(ROUTE_MODE_KEY) === "DRIVING" ? "DRIVING" : "WALKING";
+  try {
+    return localStorage.getItem(ROUTE_MODE_KEY) === "DRIVING" ? "DRIVING" : "WALKING";
+  } catch {
+    return "WALKING";
+  }
 }
 
 export function setRouteMode(mode) {
-  localStorage.setItem(ROUTE_MODE_KEY, mode === "DRIVING" ? "DRIVING" : "WALKING");
-  if (engine === "google" && (lastGooglePlaces.length || lastGoogleHotels.length || lastGoogleSpots.length)) {
-    drawGoogleRoute(lastGooglePlaces, lastGoogleHotels, lastGoogleSpots);
+  try {
+    localStorage.setItem(ROUTE_MODE_KEY, mode === "DRIVING" ? "DRIVING" : "WALKING");
+  } catch {
+    /* ignore */
   }
 }
 
@@ -176,15 +181,27 @@ export function destroyMap() {
   lastGooglePlaces = [];
   lastGoogleHotels = [];
   lastGoogleSpots = [];
+  lastRouteKey = "";
+  lastPoints = [];
+  mountedContainer = null;
   engine = null;
+}
+
+let mountedContainer = null;
+
+/** 이 요소에 지도가 이미 붙어 있거나 붙는 중이면 true. 화면을 다시 그릴 때 지도를 재사용합니다. */
+export function isMapMountedOn(container) {
+  return Boolean(container) && container === mountedContainer;
 }
 
 export async function initMap(container, { onClick } = {}) {
   destroyMap();
   if (!container) return null;
+  mountedContainer = container;
   const ok = await loadGoogleMaps();
-  if (!document.body.contains(container)) return null;
+  if (!document.body.contains(container) || mountedContainer !== container) return null;
   if (ok) return initGoogleMap(container, { onClick });
+  if (typeof L === "undefined") return null;
   return initLeafletMap(container, { onClick });
 }
 
@@ -211,6 +228,7 @@ function initLeafletMap(container, { onClick } = {}) {
 
 async function initGoogleMap(container, { onClick } = {}) {
   const { Map } = await google.maps.importLibrary("maps");
+  if (mountedContainer !== container || !document.body.contains(container)) return null;
   engine = "google";
   const options = {
     center: SEOUL,
@@ -321,82 +339,131 @@ export function googleMapsUrl(place) {
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 
-export function drawRoute(places, hotels = [], spots = []) {
+function hasPoint(item) {
+  return Number.isFinite(item?.lat) && Number.isFinite(item?.lng);
+}
+
+function popupLinks(item) {
+  const here = googleMapsHereUrl(item);
+  const maps = googleMapsUrl(item);
+  return `
+    ${here ? `<a href="${escapeHtml(here)}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
+    ${maps ? `<a href="${escapeHtml(maps)}" target="_blank" rel="noopener noreferrer">🗺 구글맵</a>` : ""}
+  `;
+}
+
+function hotelPopup(hotel) {
+  return `
+    <div class="map-popup">
+      <strong>🏨 ${escapeHtml(hotel.title || hotel.name || "숙소")}</strong>
+      ${hotel.address ? `<span>${escapeHtml(hotel.address)}</span>` : ""}
+      <div class="map-popup-links">${popupLinks(hotel)}</div>
+    </div>
+  `;
+}
+
+function spotPopup(spot) {
+  const icon = spot.icon || "📌";
+  return `
+    <div class="map-popup">
+      <strong>${escapeHtml(icon)} ${escapeHtml(spot.title || "장소")}</strong>
+      ${spot.folderName ? `<span>${escapeHtml(spot.folderName)}</span>` : ""}
+      ${spot.note ? `<span>${escapeHtml(spot.note)}</span>` : ""}
+      <div class="map-popup-links">${popupLinks(spot)}</div>
+    </div>
+  `;
+}
+
+function placePopup(place, index) {
+  return `
+    <div class="map-popup">
+      <strong>${index + 1}. ${escapeHtml(place.title || "장소")}</strong>
+      <span>${place.time ? `${escapeHtml(place.time)} · ` : ""}${index + 1}번째</span>
+      ${place.note ? `<span>${escapeHtml(place.note)}</span>` : ""}
+      <div class="map-popup-links">${popupLinks(place)}</div>
+    </div>
+  `;
+}
+
+let lastPoints = [];
+
+function fitPoints(points) {
+  if (engine === "google" && googleMap) {
+    if (points.length === 1) {
+      googleMap.setCenter(points[0]);
+      googleMap.setZoom(15);
+    } else if (points.length > 1) {
+      const bounds = new google.maps.LatLngBounds();
+      points.forEach((point) => bounds.extend(point));
+      googleMap.fitBounds(bounds, { top: 150, right: 48, bottom: 220, left: 48 });
+    }
+    return;
+  }
+  if (!leafletMap) return;
+  const latlngs = points.map((point) => [point.lat, point.lng]);
+  if (latlngs.length === 1) {
+    leafletMap.setView(latlngs[0], 15);
+  } else if (latlngs.length > 1) {
+    leafletMap.fitBounds(latlngs, { paddingTopLeft: [48, 150], paddingBottomRight: [48, 200], maxZoom: 16 });
+  }
+}
+
+/** 지금 그려진 모든 마커가 보이도록 화면을 맞춥니다. */
+export function fitAll() {
+  fitPoints(lastPoints);
+}
+
+/**
+ * 일정(번호 + 경로), 숙소, 장소 폴더 레이어를 그립니다.
+ * fit=false면 사용자가 보던 화면(줌·위치)을 유지합니다.
+ */
+export function drawRoute(places, hotels = [], spots = [], { fit = true } = {}) {
+  const dayPlaces = (places || []).filter(hasPoint);
+  const hotelList = (hotels || []).filter(hasPoint);
+  const spotList = (spots || []).filter(hasPoint);
+  lastPoints = [...dayPlaces, ...hotelList, ...spotList].map((item) => ({ lat: item.lat, lng: item.lng }));
+
   if (engine === "google") {
-    drawGoogleRoute(places, hotels, spots);
+    drawGoogleRoute(places || [], hotelList, spotList, { fit });
     return;
   }
   if (!leafletMap || !leafletMarkers || !leafletRoute) return;
   leafletMarkers.clearLayers();
   leafletRoute.clearLayers();
 
-  const dayPoints = (places || [])
-    .filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng))
-    .map((place) => [place.lat, place.lng]);
-  const hotelPoints = (hotels || [])
-    .filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng))
-    .map((hotel) => [hotel.lat, hotel.lng]);
-  const spotPoints = (spots || [])
-    .filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
-    .map((spot) => [spot.lat, spot.lng]);
-
-  (hotels || []).forEach((hotel) => {
-    if (!Number.isFinite(hotel.lat) || !Number.isFinite(hotel.lng)) return;
+  hotelList.forEach((hotel) => {
     const marker = L.marker([hotel.lat, hotel.lng], {
       icon: hotelIcon(),
       title: hotel.title || hotel.name || "숙소",
       zIndexOffset: -10,
     });
-    const here = googleMapsHereUrl(hotel);
-    const maps = googleMapsUrl(hotel);
-    marker.bindPopup(`
-      <strong>🏨 ${escapeHtml(hotel.title || hotel.name || "숙소")}</strong>
-      ${hotel.address ? `<br>${escapeHtml(hotel.address)}` : ""}
-      ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
-      ${maps ? `<br><a href="${maps}" target="_blank" rel="noopener noreferrer">🗺 구글맵에서 열기</a>` : ""}
-    `);
-    marker.on("click", () => flyToPlace(hotel));
+    marker.bindPopup(hotelPopup(hotel));
     leafletMarkers.addLayer(marker);
   });
 
-  (spots || []).forEach((spot) => {
-    if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) return;
-    const icon = spot.icon || "📌";
+  spotList.forEach((spot) => {
     const marker = L.marker([spot.lat, spot.lng], {
-      icon: spotMarkerIcon(icon),
+      icon: spotMarkerIcon(spot.icon || "📌", spot.color),
       title: spot.title || "장소",
       zIndexOffset: -5,
     });
-    const here = googleMapsHereUrl(spot);
-    const maps = googleMapsUrl(spot);
-    marker.bindPopup(`
-      <strong>${escapeHtml(icon)} ${escapeHtml(spot.title || "장소")}</strong>
-      ${spot.note ? `<br>${escapeHtml(spot.note)}` : ""}
-      ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
-      ${maps ? `<br><a href="${maps}" target="_blank" rel="noopener noreferrer">🗺 구글맵에서 열기</a>` : ""}
-    `);
-    marker.on("click", () => flyToPlace(spot));
+    marker.bindPopup(spotPopup(spot));
     leafletMarkers.addLayer(marker);
   });
 
   (places || []).forEach((place, index) => {
-    if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return;
+    if (!hasPoint(place)) return;
     const marker = L.marker([place.lat, place.lng], {
       icon: numberedIcon(index + 1),
       title: place.title,
     });
-    const here = googleMapsHereUrl(place);
-    marker.bindPopup(`
-      <strong>${escapeHtml(place.title || "장소")}</strong><br>
-      ${place.time ? `${escapeHtml(place.time)} · ` : ""}${index + 1}번째
-      ${here ? `<br><a href="${here}" target="_blank" rel="noopener noreferrer">🧭 길찾기</a>` : ""}
-    `);
+    marker.bindPopup(placePopup(place, index));
     leafletMarkers.addLayer(marker);
   });
 
-  if (dayPoints.length >= 2) {
+  if (dayPlaces.length >= 2) {
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#007aff";
-    L.polyline(dayPoints, {
+    L.polyline(dayPlaces.map((place) => [place.lat, place.lng]), {
       color: accent,
       weight: 4,
       opacity: 0.9,
@@ -405,97 +472,80 @@ export function drawRoute(places, hotels = [], spots = []) {
     }).addTo(leafletRoute);
   }
 
-  const allPoints = [...dayPoints, ...hotelPoints, ...spotPoints];
-  if (allPoints.length === 1) {
-    leafletMap.setView(allPoints[0], 15);
-  } else if (allPoints.length > 1) {
-    leafletMap.fitBounds(allPoints, { paddingTopLeft: [48, 80], paddingBottomRight: [48, 170], maxZoom: 16 });
-  }
-  window.setTimeout(() => leafletMap.invalidateSize(), 60);
+  if (fit) fitPoints(lastPoints);
+  window.setTimeout(() => leafletMap?.invalidateSize(), 60);
 }
 
-async function drawGoogleRoute(places, hotels = [], spots = []) {
+let lastRouteKey = "";
+
+function routeKey(points) {
+  return `${getRouteMode()}|${points.map((point) => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`).join(";")}`;
+}
+
+function openGoogleInfo(marker, html) {
+  if (!googleInfo || !googleMap) return;
+  googleInfo.setContent(html);
+  googleInfo.open({ anchor: marker, map: googleMap });
+}
+
+async function drawGoogleRoute(places, hotels = [], spots = [], { fit = true } = {}) {
   if (!googleMap) return;
   lastGooglePlaces = places || [];
   lastGoogleHotels = hotels || [];
   lastGoogleSpots = spots || [];
   googleMarkers.forEach((marker) => marker.setMap?.(null));
   googleMarkers = [];
-  googleLine?.setMap(null);
-  googleLine = null;
-  googleRenderer?.setMap(null);
   googleInfo?.close?.();
 
   const dayPoints = lastGooglePlaces
-    .filter((place) => Number.isFinite(place.lat) && Number.isFinite(place.lng))
+    .filter(hasPoint)
     .map((place) => ({ lat: place.lat, lng: place.lng }));
-  const hotelPoints = lastGoogleHotels
-    .filter((hotel) => Number.isFinite(hotel.lat) && Number.isFinite(hotel.lng))
-    .map((hotel) => ({ lat: hotel.lat, lng: hotel.lng }));
-  const spotPoints = lastGoogleSpots
-    .filter((spot) => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
-    .map((spot) => ({ lat: spot.lat, lng: spot.lng }));
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#007aff";
-  const hotelColor = getComputedStyle(document.documentElement).getPropertyValue("--accent-2").trim() || "#32c9c9";
-  const foodColor = getComputedStyle(document.documentElement).getPropertyValue("--warn").trim() || "#ff9500";
+  const styles = getComputedStyle(document.documentElement);
+  const accent = styles.getPropertyValue("--accent").trim() || "#007aff";
+  const hotelColor = styles.getPropertyValue("--accent-2").trim() || "#32c9c9";
 
   lastGoogleHotels.forEach((hotel) => {
-    if (!Number.isFinite(hotel.lat) || !Number.isFinite(hotel.lng)) return;
     const marker = new google.maps.Marker({
       map: googleMap,
       position: { lat: hotel.lat, lng: hotel.lng },
       title: hotel.title || hotel.name || "숙소",
       zIndex: 50,
-      label: {
-        text: "숙",
-        color: "#ffffff",
-        fontWeight: "700",
-        fontSize: "11px",
-      },
+      label: { text: "🏨", fontSize: "15px" },
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
-        fillColor: hotelColor,
+        fillColor: "#ffffff",
         fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 2,
-        scale: 12,
+        strokeColor: hotelColor,
+        strokeWeight: 3,
+        scale: 14,
       },
     });
-    marker.addListener("click", () => {
-      flyToPlace(hotel);
-    });
+    marker.addListener("click", () => openGoogleInfo(marker, hotelPopup(hotel)));
     googleMarkers.push(marker);
   });
 
   lastGoogleSpots.forEach((spot) => {
-    if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) return;
-    const icon = spot.icon || "📌";
     const marker = new google.maps.Marker({
       map: googleMap,
       position: { lat: spot.lat, lng: spot.lng },
       title: spot.title || "장소",
       zIndex: 60,
-      label: {
-        text: icon,
-        fontSize: "16px",
-      },
+      label: { text: spot.icon || "📌", fontSize: "15px" },
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
-        fillColor: foodColor,
+        fillColor: "#ffffff",
         fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 2,
+        strokeColor: spot.color || "#ff9500",
+        strokeWeight: 3,
         scale: 14,
       },
     });
-    marker.addListener("click", () => {
-      flyToPlace(spot);
-    });
+    marker.addListener("click", () => openGoogleInfo(marker, spotPopup(spot)));
     googleMarkers.push(marker);
   });
 
   lastGooglePlaces.forEach((place, index) => {
-    if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return;
+    if (!hasPoint(place)) return;
     const marker = new google.maps.Marker({
       map: googleMap,
       position: { lat: place.lat, lng: place.lng },
@@ -513,39 +563,37 @@ async function drawGoogleRoute(places, hotels = [], spots = []) {
         fillOpacity: 1,
         strokeColor: "#ffffff",
         strokeWeight: 2,
-        scale: 11,
+        scale: 12,
       },
     });
-    marker.addListener("click", () => {
-      flyToPlace(place);
-    });
+    marker.addListener("click", () => openGoogleInfo(marker, placePopup(place, index)));
     googleMarkers.push(marker);
   });
 
-  if (dayPoints.length >= 2) {
-    try {
-      await drawRoadRoute(dayPoints, accent);
-    } catch (error) {
-      console.warn("directions failed", error);
-      googleLine = new google.maps.Polyline({
-        path: dayPoints,
-        geodesic: true,
-        strokeColor: accent,
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
-        map: googleMap,
-      });
-    }
-  }
+  if (fit) fitPoints(lastPoints);
 
-  const allPoints = [...dayPoints, ...hotelPoints, ...spotPoints];
-  if (allPoints.length === 1) {
-    googleMap.setCenter(allPoints[0]);
-    googleMap.setZoom(15);
-  } else if (allPoints.length > 1) {
-    const bounds = new google.maps.LatLngBounds();
-    allPoints.forEach((point) => bounds.extend(point));
-    googleMap.fitBounds(bounds, { top: 120, right: 40, bottom: 200, left: 40 });
+  // 같은 경로·이동 수단이면 Directions를 다시 부르지 않습니다 (레이어만 바뀐 경우 등).
+  const key = dayPoints.length >= 2 ? routeKey(dayPoints) : "";
+  if (key === lastRouteKey) return;
+  lastRouteKey = key;
+  googleLine?.setMap(null);
+  googleLine = null;
+  googleRenderer?.setMap(null);
+  if (!key) return;
+  try {
+    await drawRoadRoute(dayPoints, accent);
+    if (lastRouteKey !== key) googleRenderer?.setMap(null);
+  } catch (error) {
+    console.warn("directions failed", error);
+    if (lastRouteKey !== key || !googleMap) return;
+    googleLine = new google.maps.Polyline({
+      path: dayPoints,
+      geodesic: true,
+      strokeColor: accent,
+      strokeOpacity: 0.9,
+      strokeWeight: 4,
+      map: googleMap,
+    });
   }
 }
 
@@ -732,10 +780,11 @@ function hotelIcon() {
   });
 }
 
-function spotMarkerIcon(emoji = "📌") {
+function spotMarkerIcon(emoji = "📌", color = "") {
+  const ring = /^#[0-9a-f]{3,8}$/i.test(color) ? ` style="--pin:${color}"` : "";
   return L.divIcon({
     className: "food-marker",
-    html: `<span>${escapeHtml(emoji)}</span>`,
+    html: `<span${ring}>${escapeHtml(emoji)}</span>`,
     iconSize: [32, 32],
     iconAnchor: [16, 16],
     popupAnchor: [0, -16],
@@ -743,8 +792,9 @@ function spotMarkerIcon(emoji = "📌") {
 }
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
